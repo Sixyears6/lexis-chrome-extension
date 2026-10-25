@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lexis — Từ vựng & Cài đặt</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --surface-hover: #f1f5f9;
+      --border: #e4e4e7;
+      --border-strong: #cbd5e1;
+      --text: #18181b;
+      --text-secondary: #3f3f46;
+      --text-muted: #71717a;
+      --primary: #18181b;
+      --primary-hover: #27272a;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --success-border: #bbf7d0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 420px;
+      min-height: 540px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    .top-bar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-name {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .word-counter {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      background: #f4f4f5;
+      border: 1px solid var(--border);
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+
+    .page-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 30px;
+      padding: 0 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 150ms ease-out;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: #f4f4f5;
+      border-color: var(--border-strong);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-dark {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+
+    .btn-dark:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-danger {
+      background: #ffffff;
+      color: var(--danger);
+      border-color: var(--danger-border);
+    }
+
+    .btn-danger:hover {
+      background: var(--danger-bg);
+      border-color: var(--danger);
+    }
+
+    /* Mode Selector Bar (Chọn nhanh chế độ dịch) */
+    .mode-bar {
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .mode-bar-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .mode-segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: #e4e4e7;
+      padding: 2px;
+      border-radius: 6px;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .mode-pill {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 150ms ease-out;
+      text-align: center;
+    }
+
+    .mode-pill.active {
+      background: #ffffff;
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 20px;
+      background: #ffffff;
+    }
+
+    .tab-item {
+      padding: 10px 0;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color 150ms ease-out, border-color 150ms ease-out;
+    }
+
+    .tab-item:hover {
+      color: var(--text);
+    }
+
+    .tab-item.active {
+      color: var(--text);
+      border-bottom-color: var(--text);
+    }
+
+    /* Content Views */
+    .view-pane {
+      display: none;
+      padding: 16px;
+    }
+
+    .view-pane.active {
+      display: block;
+    }
+
+    /* Form Controls */
+    .field {
+      margin-bottom: 12px;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 5px;
+    }
+
+    .input,
+    .select {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: var(--text);
+      background: #ffffff;
+      outline: none;
+      transition: border-color 150ms ease-out;
+    }
+
+    .input:focus,
+    .select:focus {
+      border-color: var(--text);
+    }
+
+    /* Redesigned Vocabulary Add Box */
+    .vocab-composer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .composer-row-top {
+      display: grid;
+      grid-template-columns: 1fr 92px;
+      gap: 8px;
+    }
+
+    .composer-row-bottom {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+
+    /* Redesigned Vocabulary List (2-Line Clear Cards) */
+    .vocab-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 245px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .vocab-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: #ffffff;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      transition: border-color 150ms ease-out, background-color 150ms ease-out;
+    }
+
+    .vocab-card:hover {
+      border-color: var(--border-strong);
+      background: var(--surface);
+    }
+
+    .vocab-card-left {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .vocab-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 3px;
+    }
+
+    .v-word {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .v-phonetic {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-family: "SF Pro Text", "Lucida Sans Unicode", sans-serif;
+    }
+
+    .v-pos {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      padding: 0 6px;
+      border-radius: 4px;
+    }
+
+    .v-meaning {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .vocab-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .icon-action {
+      all: unset;
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 150ms ease-out;
+    }
+
+    .icon-action:hover {
+      background: #e4e4e7;
+      color: var(--text);
+    }
+
+    .icon-action.delete:hover {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .empty-box {
+      padding: 30px 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+    }
+
+    .footer-bar {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    /* API Session Card */
+    .session-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--surface);
+      margin-bottom: 12px;
+    }
+
+    .session-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .session-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .session-provider-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: #e4e4e7;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .session-desc {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+
+    .session-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Alert Box (Thông báo lỗi API / Sai Model rõ ràng) */
+    .alert-box {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-line;
+      word-break: break-word;
+    }
+
+    .alert-box.error {
+      display: block;
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid var(--danger-border);
+    }
+
+    .alert-box.success {
+      display: block;
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    /* Autocomplete Suggestion Dropdown in Popup */
+    .search-wrap {
+      position: relative;
+      margin-bottom: 8px;
+    }
+
+    .sug-dropdown {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 0;
+      right: 0;
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+      max-height: 190px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+    }
+
+    .sug-dropdown.is-open {
+      display: block;
+    }
+
+    .sug-item {
+      padding: 7px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .sug-item:last-child {
+      border-bottom: none;
+    }
+
+    .sug-item:hover {
+      background: var(--surface-hover);
+    }
+
+    .sug-word {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .sug-meaning {
+      color: var(--text-muted);
+      font-size: 11.5px;
+      margin-left: 6px;
+    }
+
+    .sug-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="top-bar">
+    <div class="brand">
+      <span class="brand-name">Lexis</span>
+      <span class="word-counter" id="word-count-badge">0 từ đã thuộc</span>
+    </div>
+    <div class="page-actions">
+      <button class="btn" id="btn-open-float" title="Mở cửa sổ nổi 400px trên trang (Không bị tắt khi click ra ngoài)">❐ Cửa sổ nổi</button>
+      <button class="btn" id="btn-restore">Bản gốc</button>
+      <button class="btn btn-dark" id="btn-translate">Dịch trang</button>
+    </div>
+  </header>
+
+  <!-- Thanh chọn nhanh 3 chế độ dịch: Song ngữ bên dưới / Dịch từng từ / Thay thế -->
+  <div class="mode-bar">
+    <span class="mode-bar-label">Kiểu dịch:</span>
+    <div class="mode-segmented" id="mode-segmented">
+      <button type="button" class="mode-pill active" data-mode="bilingual" title="Giữ câu gốc và hiện phần dịch tiếng Việt ngay bên dưới">
+        Song ngữ dưới
+      </button>
+      <button type="button" class="mode-pill" data-mode="word_by_word" title="Hiện nghĩa tiếng Việt nhỏ ngay dưới từng từ">
+        Dịch từng từ
+      </button>
+      <button type="button" class="mode-pill" data-mode="replace" title="Thay thế trực tiếp câu gốc bằng câu dịch">
+        Thay thế
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <nav class="nav-tabs">
+    <button class="tab-item active" data-target="pane-vocab">Từ vựng đã lưu</button>
+    <button class="tab-item" data-target="pane-settings">Cài đặt API</button>
+  </nav>
+
+  <!-- PANE 1: VOCABULARY (THIẾT Kế LẠI THOÁNG ĐÃNG, RÕ RÀNG) -->
+  <main class="view-pane active" id="pane-vocab">
+    <!-- Khung thêm từ vựng mới bố cục 2 hàng dễ nhìn -->
+    <div class="vocab-composer">
+      <div class="composer-row-top">
+        <input type="text" class="input" id="add-word" placeholder="Nhập từ / cụm từ gốc (vd: resilient)" />
+        <select class="select" id="add-pos">
+          <option value="n">Danh từ (n)</option>
+          <option value="v">Động từ (v)</option>
+          <option value="adj">Tính từ (adj)</option>
+          <option value="adv">Trạng từ (adv)</option>
+          <option value="phrase">Cụm từ</option>
+          <option value="idiom">Thành ngữ</option>
+        </select>
+      </div>
+      <div class="composer-row-bottom">
+        <input type="text" class="input" id="add-meaning" placeholder="Nghĩa tiếng Việt (tự động lưu nháp khi gõ)" />
+        <button class="btn btn-dark" id="btn-add-word" style="height:34px;padding:0 14px;">+ Lưu từ</button>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <input type="text" class="input" id="search-vocab" placeholder="Tìm kiếm hoặc tra từ (gợi ý tự động khi gõ)..." autocomplete="off" />
+      <div class="sug-dropdown" id="popup-sug-dropdown"></div>
+    </div>
+
+    <!-- Danh sách thẻ từ vựng 2 tầng -->
+    <div class="vocab-list" id="vocab-list"></div>
+
+    <div class="footer-bar">
+      <button class="btn" id="btn-export-json" style="flex:1;">Xuất JSON sao lưu</button>
+      <button class="btn" id="btn-import-json" style="flex:1;">Nhập file JSON</button>
+      <input type="file" id="file-import-json" accept=".json" style="display:none;" />
+    </div>
+  </main>
+
+  <!-- PANE 2: SETTINGS (XÁC THỰC API & MODEL THỰC TẾ, BÁO LỖI CHI TIẾT) -->
+  <section class="view-pane" id="pane-settings">
+    <!-- TRẠNG THÁI 1: CHƯA ĐĂNG NHẬP API -->
+    <div id="api-login-view">
+      <div class="field">
+        <label class="field-label">1. Chọn Nhà cung cấp AI</label>
+        <select class="select" id="provider-select">
+          <option value="gemini">Google Gemini API (Free Tier)</option>
+          <option value="groq">Groq API (Llama 3.3 - Siêu nhanh)</option>
+          <option value="openai">OpenAI API (ChatGPT)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field-label">2. Chọn hoặc nhập tên Model</label>
+        <input
+          type="text"
+          class="input"
+          id="model-input"
+          list="model-suggestions"
+          placeholder="Nhập hoặc chọn tên model..."
+          value="gemini-3.8-flash"
+        />
+        <datalist id="model-suggestions">
+          <option value="gemini-3.8-flash">Gemini 3.8 Flash (Cân bằng &amp; Nhanh)</option>
+          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Siêu nhẹ)</option>
+          <option value="gemini-4-argon">Gemini 4 Argon (Phân tích chuyên sâu)</option>
+        </datalist>
+      </div>
+
+      <div class="field">
+        <label class="field-label">3. Nhập API Key (Chỉ nhập 1 lần — Tự động ẩn sau khi lưu)</label>
+        <input
+          type="password"
+          class="input"
+          id="api-key-input"
+          placeholder="Dán API Key của bạn vào đây..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <button class="btn btn-dark" id="btn-login-api" style="width:100%;height:34px;">
+        Xác thực &amp; Đăng nhập API
+      </button>
+    </div>
+
+    <!-- TRẠNG THÁI 2: ĐÃ ĐĂNG NHẬP API (KHÓA & ẨN KEY, MUỐN ĐỔI PHẢI LOGOUT) -->
+    <div id="api-connected-view" style="display:none;">
+      <div class="session-card">
+        <div class="session-header">
+          <span class="session-badge">
+            <span class="status-dot"></span>
+            <span>API đang hoạt động</span>
+          </span>
+          <span class="session-provider-tag" id="connected-provider-label">GEMINI</span>
+        </div>
+        <p class="session-desc">
+          API Key đã được xác thực và ẩn bảo mật hoàn toàn. Để đổi sang API Key hoặc Model khác, vui lòng bấm Đăng xuất.
+        </p>
+        <div class="session-actions">
+          <button class="btn" id="btn-test-key" style="flex:1;">Kiểm tra lại kết nối</button>
+          <button class="btn btn-danger" id="btn-logout-api" style="flex:1;">Đăng xuất / Xóa API</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HỘP HIỂN THỊ KẾT QUẢ KIỂM TRA / LỖI SAI API KEY HOẶC SAI MODEL -->
+    <div class="alert-box" id="api-alert-box"></div>
+
+    <div class="switch-row">
+      <span>Tự động dịch khi mở trang web</span>
+      <input type="checkbox" id="auto-translate" />
+    </div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

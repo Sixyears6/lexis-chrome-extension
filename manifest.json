@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Lexis — Contextual Reading & Vocabulary",
+  "version": "2.0.0",
+  "description": "Minimalist contextual translation, grammar breakdown, and active vocabulary retention for Chrome.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.groq.com/*",
+    "https://api.openai.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lexis — Settings & Vocabulary"
+  },
+  "options_page": "popup.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["shadow-style.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

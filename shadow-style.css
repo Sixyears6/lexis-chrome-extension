@@ -1,0 +1,1105 @@
+/**
+ * ============================================================================
+ * Lexis — Shadow DOM Isolated Stylesheet (shadow-style.css)
+ * ============================================================================
+ * File này CHỈ nạp bên trong Shadow DOM (#lexis-shadow-host), cô lập 100%
+ * khỏi trang web gốc để tuyệt đối không ảnh hưởng tới icon của YouTube
+ * (phụ đề, nút Like, thanh công cụ video) hay bất kỳ ứng dụng web nào.
+ *
+ * Phong cách thiết kế: Human-Crafted Minimalism (Linear / Notion / Apple)
+ * Bảng màu trung tính Zinc (#18181b, #27272a, #f4f4f5), không neon/gradient.
+ */
+
+:host {
+  all: initial;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f4f4f5;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ============================================================================
+ * 1. HOVER TOOLTIP (.lw-tooltip)
+ * ============================================================================ */
+.lw-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  max-width: 280px;
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.14);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  visibility: hidden;
+}
+
+.lw-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.lw-tt-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.lw-tt-word {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.lw-tt-phonetic {
+  font-size: 11.5px;
+  color: #a1a1aa;
+  font-family: "SF Pro Text", "Lucida Sans Unicode", sans-serif;
+}
+
+.lw-tt-pos {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #a1a1aa;
+  background: #27272a;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.lw-tt-meaning {
+  font-size: 12.5px;
+  color: #d4d4d8;
+  line-height: 1.4;
+}
+
+/* ============================================================================
+ * 2. QUICK SELECTION PILL (.lw-selection-pill)
+ * ============================================================================ */
+.lw-selection-pill {
+  position: fixed;
+  z-index: 2147483647;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out, background-color 150ms ease-out;
+  visibility: hidden;
+}
+
+.lw-selection-pill.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.lw-selection-pill:hover {
+  background: #27272a;
+}
+
+.lw-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e4e4e7;
+}
+
+/* ============================================================================
+ * 3. DRAGGABLE MINIMIZED LAUNCHER PILL (.lw-launcher)
+ *    Có thể kéo thả tự do tới bất kỳ vị trí nào trên màn hình, không che YouTube
+ * ============================================================================ */
+.lw-launcher {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483645;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 5px 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26);
+  pointer-events: auto;
+  user-select: none;
+  font-size: 12px;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.lw-launcher.is-hidden {
+  display: none !important;
+}
+
+.lw-launcher:hover {
+  border-color: #3f3f46;
+}
+
+.lw-launcher-drag {
+  cursor: grab;
+  color: #71717a;
+  padding: 2px 4px;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.lw-launcher-drag:active {
+  cursor: grabbing;
+}
+
+.lw-launcher-grip {
+  color: #71717a;
+  font-size: 12px;
+  letter-spacing: -1px;
+}
+
+.lw-launcher-btn {
+  all: unset;
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: #27272a;
+  color: #f4f4f5;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #3f3f46;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+  white-space: nowrap;
+}
+
+.lw-launcher-btn:hover {
+  background: #3f3f46;
+}
+
+.lw-launcher-btn.primary {
+  background: #f4f4f5;
+  color: #18181b;
+  border-color: #f4f4f5;
+  font-weight: 600;
+}
+
+.lw-launcher-btn.primary:hover {
+  background: #e4e4e7;
+}
+
+/* ============================================================================
+ * 4. PERSISTENT DRAGGABLE FLOATING WINDOW (.lw-window)
+ *    Kích thước chuẩn: rộng 400px, cao 300px–500px
+ *    - Kéo thả tự do (Draggable)
+ *    - Có thể thu nhỏ (Minimize —)
+ *    - KHÔNG tự tắt khi click ra ngoài, chỉ đóng khi bấm nút ×
+ * ============================================================================ */
+.lw-window {
+  position: fixed;
+  top: 64px;
+  right: 20px;
+  width: 400px;
+  max-width: calc(100vw - 20px);
+  min-height: 320px;
+  max-height: 500px;
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.38), 0 1px 3px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 2147483646;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  visibility: hidden;
+}
+
+.lw-window.is-open {
+  opacity: 1;
+  transform: scale(1);
+  visibility: visible;
+}
+
+/* Thanh tiêu đề kéo thả (Draggable Titlebar) */
+.lw-win-header {
+  padding: 9px 12px;
+  background: #141417;
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.lw-win-header:active {
+  cursor: grabbing;
+}
+
+.lw-win-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.lw-win-grip {
+  color: #71717a;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.lw-win-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.lw-win-badge {
+  font-size: 11px;
+  color: #a1a1aa;
+  background: #27272a;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.lw-win-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lw-win-ctrl-btn {
+  all: unset;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a1a1aa;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.lw-win-ctrl-btn:hover {
+  background: #27272a;
+  color: #ffffff;
+}
+
+.lw-win-ctrl-btn.close:hover {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+/* ============================================================================
+ * 5. THANH TÌM KIẾM THÔNG MINH KÈM GỢI Ý TỪ TỰ ĐỘNG (SEARCH + AUTOCOMPLETE)
+ * ============================================================================ */
+.lw-search-bar {
+  position: relative;
+  padding: 8px 12px;
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+  flex-shrink: 0;
+}
+
+.lw-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lw-search-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 64px 0 10px;
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 150ms ease-out;
+}
+
+.lw-search-input::placeholder {
+  color: #71717a;
+}
+
+.lw-search-input:focus {
+  border-color: #a1a1aa;
+}
+
+.lw-search-clear {
+  all: unset;
+  position: absolute;
+  right: 46px;
+  color: #71717a;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 5px;
+  display: none;
+}
+
+.lw-search-clear.is-visible {
+  display: inline-block;
+}
+
+.lw-search-clear:hover {
+  color: #f4f4f5;
+}
+
+.lw-search-go {
+  all: unset;
+  position: absolute;
+  right: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: #3f3f46;
+  color: #f4f4f5;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.lw-search-go:hover {
+  background: #52525b;
+}
+
+/* Dropdown gợi ý từ tự động khi đang gõ (Autocomplete Suggestions) */
+.lw-sug-dropdown {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 12px;
+  right: 12px;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  max-height: 210px;
+  overflow-y: auto;
+  z-index: 30;
+  display: none;
+}
+
+.lw-sug-dropdown.is-open {
+  display: block;
+}
+
+.lw-sug-item {
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #27272a;
+  transition: background-color 120ms ease-out;
+}
+
+.lw-sug-item:last-child {
+  border-bottom: none;
+}
+
+.lw-sug-item:hover,
+.lw-sug-item.is-active {
+  background: #27272a;
+}
+
+.lw-sug-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lw-sug-word {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.lw-sug-meaning {
+  font-size: 11.5px;
+  color: #a1a1aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lw-sug-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #27272a;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+  white-space: nowrap;
+}
+
+.lw-sug-tag.saved {
+  color: #e4e4e7;
+  background: #3f3f46;
+}
+
+/* ============================================================================
+ * 6. TABS BÊN TRONG CỬA SỔ 400PX
+ * ============================================================================ */
+.lw-win-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: #141417;
+  border-bottom: 1px solid #27272a;
+  flex-shrink: 0;
+}
+
+.lw-win-tab {
+  all: unset;
+  text-align: center;
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.lw-win-tab:hover {
+  color: #d4d4d8;
+}
+
+.lw-win-tab.is-active {
+  color: #ffffff;
+  border-bottom-color: #f4f4f5;
+  background: #18181b;
+}
+
+/* Vùng nội dung cuộn mượt (Cao trong khung 300px–500px) */
+.lw-win-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  max-height: 330px;
+}
+
+.lw-tab-pane {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lw-tab-pane.is-active {
+  display: flex;
+}
+
+/* ============================================================================
+ * TAB 1: GOOGLE DỊCH (TRANSLATOR PANE)
+ * ============================================================================ */
+.lw-gt-langbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.lw-gt-select {
+  height: 28px;
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  outline: none;
+  cursor: pointer;
+}
+
+.lw-gt-swap {
+  all: unset;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  color: #d4d4d8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 150ms ease-out;
+}
+
+.lw-gt-swap:hover {
+  background: #3f3f46;
+  color: #ffffff;
+}
+
+.lw-gt-source-box {
+  position: relative;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.lw-gt-source-box:focus-within {
+  border-color: #a1a1aa;
+}
+
+.lw-gt-textarea {
+  width: 100%;
+  min-height: 58px;
+  max-height: 110px;
+  background: transparent;
+  color: #ffffff;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.lw-gt-textarea::placeholder {
+  color: #71717a;
+}
+
+.lw-gt-source-Sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #3f3f46;
+}
+
+.lw-gt-mini-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lw-mini-btn {
+  all: unset;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #18181b;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.lw-mini-btn:hover {
+  color: #ffffff;
+  background: #3f3f46;
+}
+
+.lw-gt-run-btn {
+  all: unset;
+  padding: 4px 12px;
+  border-radius: 5px;
+  background: #f4f4f5;
+  color: #18181b;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.lw-gt-run-btn:hover {
+  background: #e4e4e7;
+}
+
+/* Kết quả Google Dịch */
+.lw-gt-result-card {
+  background: #141417;
+  border: 1px solid #27272a;
+  border-radius: 7px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lw-gt-main-out {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.lw-gt-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.lw-gt-pos-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #27272a;
+  color: #e4e4e7;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.lw-gt-alt-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px solid #27272a;
+  font-size: 12px;
+  color: #d4d4d8;
+}
+
+.lw-gt-note {
+  font-size: 11.5px;
+  color: #a1a1aa;
+  line-height: 1.45;
+  padding-top: 4px;
+  border-top: 1px dashed #27272a;
+}
+
+.lw-gt-save-bar {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* ============================================================================
+ * TAB 2: LƯU TỪ & SỔ TỪ VỰNG (TỰ ĐỘNG LƯU NHÁP KHÔNG BAO GIỜ MẤT CHỮ)
+ * ============================================================================ */
+.lw-vocab-composer {
+  background: #141417;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.lw-composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.lw-draft-status {
+  font-size: 10.5px;
+  color: #71717a;
+}
+
+.lw-comp-row-1 {
+  display: grid;
+  grid-template-columns: 1fr 86px;
+  gap: 6px;
+}
+
+.lw-comp-row-2 {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.lw-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  background: #27272a;
+  color: #ffffff;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  font-size: 12px;
+  outline: none;
+}
+
+.lw-input:focus {
+  border-color: #a1a1aa;
+}
+
+.lw-input::placeholder {
+  color: #71717a;
+}
+
+.lw-win-vocab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lw-v-card {
+  background: #141417;
+  border: 1px solid #27272a;
+  border-radius: 7px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lw-v-card:hover {
+  border-color: #3f3f46;
+}
+
+.lw-v-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.lw-v-word {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.lw-v-phonetic {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.lw-v-pos {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #27272a;
+  color: #d4d4d8;
+  padding: 0 5px;
+  border-radius: 4px;
+}
+
+.lw-v-meaning {
+  font-size: 12px;
+  color: #d4d4d8;
+  line-height: 1.4;
+}
+
+.lw-v-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+ * TAB 3: MỔ XẺ NGỮ PHÁP CÂU
+ * ============================================================================ */
+.lw-ins-word-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lw-ins-word {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.lw-ins-pos {
+  font-size: 11px;
+  font-weight: 500;
+  color: #a1a1aa;
+  background: #27272a;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.lw-ins-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #a1a1aa;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lw-ins-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lw-ins-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #71717a;
+}
+
+.lw-ins-translation {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.45;
+}
+
+.lw-ins-why {
+  font-size: 12px;
+  color: #a1a1aa;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.lw-ins-divider {
+  height: 1px;
+  background: #27272a;
+  margin: 4px 0;
+}
+
+.lw-ins-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lw-ins-list li {
+  position: relative;
+  padding-left: 12px;
+  font-size: 12px;
+  color: #d4d4d8;
+  line-height: 1.45;
+}
+
+.lw-ins-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #71717a;
+}
+
+.lw-ins-loading {
+  padding: 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.lw-spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #3f3f46;
+  border-top-color: #f4f4f5;
+  border-radius: 50%;
+  animation: lw-spin 650ms linear infinite;
+}
+
+@keyframes lw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lw-action-btn {
+  all: unset;
+  flex: 1;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #f4f4f5;
+  color: #18181b;
+  border: 1px solid #f4f4f5;
+  transition: background-color 150ms ease-out;
+}
+
+.lw-action-btn:hover {
+  background: #e4e4e7;
+}
+
+.lw-action-btn.is-saved {
+  background: #27272a;
+  color: #d4d4d8;
+  border-color: #3f3f46;
+}
+
+/* ============================================================================
+ * THANH CÔNG CỤ DỊCH TRANG Ở CHÂN CỬA SỔ 400PX (.lw-win-footer)
+ * ============================================================================ */
+.lw-win-footer {
+  padding: 8px 12px;
+  background: #141417;
+  border-top: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.lw-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lw-dock-select {
+  background: #27272a;
+  color: #e4e4e7;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  outline: none;
+  cursor: pointer;
+}
+
+.lw-dock-status {
+  color: #a1a1aa;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lw-dock-btn {
+  all: unset;
+  padding: 5px 11px;
+  border-radius: 5px;
+  background: #f4f4f5;
+  color: #18181b;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 150ms ease-out;
+}
+
+.lw-dock-btn:hover {
+  background: #e4e4e7;
+}
+
+/* ============================================================================
+ * 7. ERROR NOTIFICATION TOAST (.lw-error-toast)
+ * ============================================================================ */
+.lw-error-toast {
+  position: fixed;
+  bottom: 64px;
+  right: 20px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #7f1d1d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  z-index: 2147483647;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  visibility: hidden;
+}
+
+.lw-error-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.lw-err-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.lw-err-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f87171;
+}
+
+.lw-err-close {
+  all: unset;
+  cursor: pointer;
+  color: #a1a1aa;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+.lw-err-body {
+  font-size: 12px;
+  color: #d4d4d8;
+  line-height: 1.45;
+  white-space: pre-line;
+  word-break: break-word;
+}
