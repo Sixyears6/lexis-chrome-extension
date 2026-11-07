@@ -1103,3 +1103,321 @@
   white-space: pre-line;
   word-break: break-word;
 }
+Imports System.Text.RegularExpressions
+
+Public Class FrmKaraoke
+
+    ' ==========================================
+    ' 1. KHỞI TẠO VÀ CÀI ĐẶT BAN ĐẦU (Mục 1, 12)
+    ' ==========================================
+    Private Sub FrmKaraoke_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        radThuong.Checked = True
+        radChieu.Checked = True
+
+        ' Cấu hình 7 cột cho ListView nếu trên giao diện chưa tạo
+        If lsvDanhSach.Columns.Count = 0 Then
+            lsvDanhSach.View = View.Details
+            lsvDanhSach.FullRowSelect = True
+            lsvDanhSach.GridLines = True
+            lsvDanhSach.MultiSelect = False
+
+            lsvDanhSach.Columns.Add("Mã đặt", 80)
+            lsvDanhSach.Columns.Add("Tên khách", 120)
+            lsvDanhSach.Columns.Add("Loại phòng", 100)
+            lsvDanhSach.Columns.Add("Khung giờ", 90)
+            lsvDanhSach.Columns.Add("Số giờ", 60)
+            lsvDanhSach.Columns.Add("Dịch vụ", 120)
+            lsvDanhSach.Columns.Add("Thành tiền", 110)
+        End If
+
+        ' Bắt đầu chạy đồng hồ
+        tmrDongHo.Interval = 1000
+        tmrDongHo.Start()
+
+        TinhTien()
+        CapNhatThongKe()
+    End Sub
+
+    ' Cập nhật ngày giờ góc phải (Mục 12)
+    Private Sub tmrDongHo_Tick(sender As Object, e As EventArgs) Handles tmrDongHo.Tick
+        sslDongHo.Text = DateTime.Now.ToString("HH:mm:ss  dd/MM/yyyy")
+    End Sub
+
+    ' ==========================================
+    ' 2. TÍNH TIỀN TỰ ĐỘNG & RÀNG BUỘC (Mục 3, 4)
+    ' ==========================================
+    Private Sub TinhTien_CheckedChanged(sender As Object, e As EventArgs) Handles _
+        radThuong.CheckedChanged, radCouple.CheckedChanged, radVIP.CheckedChanged, radParty.CheckedChanged, _
+        radSang.CheckedChanged, radChieu.CheckedChanged, radToi.CheckedChanged, _
+        chkTraiCay.CheckedChanged, chkThanhVien.CheckedChanged, txtSoGio.TextChanged
+
+        ' Ràng buộc: Party không phục vụ buổi sáng
+        If radParty.Checked Then
+            radSang.Enabled = False
+            If radSang.Checked Then radChieu.Checked = True
+        Else
+            radSang.Enabled = True
+        End If
+
+        TinhTien()
+    End Sub
+
+    Private Sub TinhTien()
+        Dim soGio As Integer
+        If Not Integer.TryParse(txtSoGio.Text.Trim(), soGio) OrElse soGio < 1 OrElse soGio > 8 Then
+            lblThanhTien.Text = "0 VNĐ"
+            Exit Sub
+        End If
+
+        ' Đơn giá theo loại phòng
+        Dim donGia As Double = 150000
+        If radCouple.Checked Then donGia = 180000
+        If radVIP.Checked Then donGia = 250000
+        If radParty.Checked Then donGia = 400000
+
+        ' Hệ số theo khung giờ
+        Dim heSo As Double = 1.0
+        If radSang.Checked Then heSo = 0.8
+        If radToi.Checked Then heSo = 1.2
+
+        ' Phụ phí
+        Dim phuPhi As Double = If(chkTraiCay.Checked, 200000, 0)
+
+        ' Tính thành tiền
+        Dim tongTien As Double = (donGia * soGio * heSo) + phuPhi
+        If chkThanhVien.Checked Then tongTien *= 0.9
+
+        lblThanhTien.Text = String.Format("{0:N0} VNĐ", tongTien)
+    End Sub
+
+    ' ==========================================
+    ' 3. HÀM KIỂM TRA DỮ LIỆU (Mục 2)
+    ' ==========================================
+    Private Function KiemTraDuLieu(isThem As Boolean) As Boolean
+        Dim maDat As String = txtMaDat.Text.Trim()
+
+        ' Định dạng K + 3 số (VD: K001)
+        If Not Regex.IsMatch(maDat, "^K\d{3}$") Then
+            MessageBox.Show("Mã đặt phòng phải có dạng K kèm 3 chữ số (VD: K001)!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            txtMaDat.Focus()
+            Return False
+        End If
+
+        ' Không trùng mã khi thêm mới
+        If isThem Then
+            For Each it As ListViewItem In lsvDanhSach.Items
+                If it.Text.Equals(maDat, StringComparison.OrdinalIgnoreCase) Then
+                    MessageBox.Show("Mã đặt phòng này đã tồn tại!", "Lỗi trùng mã", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    txtMaDat.Focus()
+                    Return False
+                End If
+            Next
+        End If
+
+        ' Tên khách không để trống
+        If String.IsNullOrWhiteSpace(txtTenKhach.Text) Then
+            MessageBox.Show("Tên khách hàng không được để trống!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            txtTenKhach.Focus()
+            Return False
+        End If
+
+        ' Số giờ từ 1 đến 8
+        Dim soGio As Integer
+        If Not Integer.TryParse(txtSoGio.Text.Trim(), soGio) OrElse soGio < 1 OrElse soGio > 8 Then
+            MessageBox.Show("Số giờ phải là số nguyên từ 1 đến 8!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            txtSoGio.Focus()
+            Return False
+        End If
+
+        Return True
+    End Function
+
+    Private Function LayLoaiPhong() As String
+        If radParty.Checked Then Return "Party"
+        If radVIP.Checked Then Return "VIP"
+        If radCouple.Checked Then Return "Couple"
+        Return "Thường"
+    End Function
+
+    Private Function LayKhungGio() As String
+        If radSang.Checked Then Return "Sáng"
+        If radToi.Checked Then Return "Tối"
+        Return "Chiều"
+    End Function
+
+    Private Function LayDichVu() As String
+        Dim dv As String = ""
+        If chkTraiCay.Checked Then dv &= "Trái cây, "
+        If chkThanhVien.Checked Then dv &= "Thành viên, "
+        Return dv.TrimEnd(" "c, ","c)
+    End Function
+
+    ' ==========================================
+    ' 4. THÊM - SỬA - XÓA - LÀM MỚI (Mục 6, 8, 9)
+    ' ==========================================
+    Private Sub btnThem_Click(sender As Object, e As EventArgs) Handles btnThem.Click
+        If Not KiemTraDuLieu(True) Then Exit Sub
+
+        Dim item As New ListViewItem(txtMaDat.Text.Trim())
+        item.SubItems.Add(txtTenKhach.Text.Trim())
+        item.SubItems.Add(LayLoaiPhong())
+        item.SubItems.Add(LayKhungGio())
+        item.SubItems.Add(txtSoGio.Text.Trim())
+        item.SubItems.Add(LayDichVu())
+        item.SubItems.Add(lblThanhTien.Text)
+        item.Tag = picAnh.Tag ' Lưu đường dẫn ảnh vào Tag
+
+        lsvDanhSach.Items.Add(item)
+        CapNhatThongKe()
+    End Sub
+
+    Private Sub btnSua_Click(sender As Object, e As EventArgs) Handles btnSua.Click
+        If lsvDanhSach.SelectedItems.Count = 0 Then
+            MessageBox.Show("Vui lòng chọn dòng cần sửa!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Exit Sub
+        End If
+
+        If Not KiemTraDuLieu(False) Then Exit Sub
+
+        Dim item As ListViewItem = lsvDanhSach.SelectedItems(0)
+        item.SubItems(1).Text = txtTenKhach.Text.Trim()
+        item.SubItems(2).Text = LayLoaiPhong()
+        item.SubItems(3).Text = LayKhungGio()
+        item.SubItems(4).Text = txtSoGio.Text.Trim()
+        item.SubItems(5).Text = LayDichVu()
+        item.SubItems(6).Text = lblThanhTien.Text
+        item.Tag = picAnh.Tag
+
+        CapNhatThongKe()
+        MessageBox.Show("Cập nhật thành công!", "Thông báo")
+    End Sub
+
+    Private Sub btnXoa_Click(sender As Object, e As EventArgs) Handles btnXoa.Click
+        If lsvDanhSach.SelectedItems.Count = 0 Then
+            MessageBox.Show("Vui lòng chọn dòng cần xóa!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Exit Sub
+        End If
+
+        If MessageBox.Show("Bạn có muốn xóa mục này không?", "Xác nhận xóa", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+            lsvDanhSach.Items.Remove(lsvDanhSach.SelectedItems(0))
+            btnLamMoi_Click(sender, e)
+            CapNhatThongKe()
+        End If
+    End Sub
+
+    Private Sub btnLamMoi_Click(sender As Object, e As EventArgs) Handles btnLamMoi.Click
+        txtMaDat.ReadOnly = False
+        txtMaDat.Clear()
+        txtTenKhach.Clear()
+        txtSoGio.Clear()
+
+        chkTraiCay.Checked = False
+        chkThanhVien.Checked = False
+
+        picAnh.Image = Nothing
+        picAnh.Tag = Nothing
+
+        radThuong.Checked = True
+        radChieu.Checked = True
+
+        lblThanhTien.Text = "0 VNĐ"
+        txtMaDat.Focus()
+    End Sub
+
+    ' ==========================================
+    ' 5. CHỌN DÒNG TRÊN LISTVIEW & CHỌN ẢNH (Mục 5, 7)
+    ' ==========================================
+    Private Sub lsvDanhSach_SelectedIndexChanged(sender As Object, e As EventArgs) Handles lsvDanhSach.SelectedIndexChanged
+        If lsvDanhSach.SelectedItems.Count = 0 Then Exit Sub
+        Dim item As ListViewItem = lsvDanhSach.SelectedItems(0)
+
+        txtMaDat.Text = item.SubItems(0).Text
+        txtMaDat.ReadOnly = True ' Khóa mã
+        txtTenKhach.Text = item.SubItems(1).Text
+
+        ' Đổ dữ liệu RadioButton loại phòng
+        Dim loai As String = item.SubItems(2).Text
+        radParty.Checked = (loai = "Party")
+        radVIP.Checked = (loai = "VIP")
+        radCouple.Checked = (loai = "Couple")
+        radThuong.Checked = (loai = "Thường")
+
+        ' Đổ dữ liệu RadioButton khung giờ
+        Dim gio As String = item.SubItems(3).Text
+        radSang.Checked = (gio = "Sáng")
+        radToi.Checked = (gio = "Tối")
+        radChieu.Checked = (gio = "Chiều")
+
+        txtSoGio.Text = item.SubItems(4).Text
+
+        ' Dịch vụ
+        Dim dv As String = item.SubItems(5).Text
+        chkTraiCay.Checked = dv.Contains("Trái cây")
+        chkThanhVien.Checked = dv.Contains("Thành viên")
+
+        ' Hiển thị lại ảnh
+        If item.Tag IsNot Nothing AndAlso Not String.IsNullOrEmpty(item.Tag.ToString()) Then
+            Try
+                picAnh.ImageLocation = item.Tag.ToString()
+                picAnh.Tag = item.Tag
+            Catch
+                picAnh.Image = Nothing
+            End Try
+        Else
+            picAnh.Image = Nothing
+            picAnh.Tag = Nothing
+        End If
+
+        TinhTien()
+    End Sub
+
+    Private Sub btnChonAnh_Click(sender As Object, e As EventArgs) Handles btnChonAnh.Click
+        ofdAnh.Filter = "Ảnh (*.jpg;*.png;*.bmp)|*.jpg;*.png;*.bmp"
+        If ofdAnh.ShowDialog() = DialogResult.OK Then
+            picAnh.ImageLocation = ofdAnh.FileName
+            picAnh.Tag = ofdAnh.FileName
+        End If
+    End Sub
+
+    ' ==========================================
+    ' 6. THỐNG KÊ & MENU TRANG (Mục 10, 11)
+    ' ==========================================
+    Private Sub CapNhatThongKe()
+        Dim tongTien As Double = 0
+        For Each item As ListViewItem In lsvDanhSach.Items
+            Dim strTien As String = item.SubItems(6).Text.Replace(" VNĐ", "").Replace(",", "").Trim()
+            Dim val As Double
+            If Double.TryParse(strTien, val) Then
+                tongTien += val
+            End If
+        Next
+        lblThongKe.Text = String.Format("Tổng số lượt: {0}  |  Tổng doanh thu: {1:N0} VNĐ", lsvDanhSach.Items.Count, tongTien)
+    End Sub
+
+    Private Sub mnuLamMoi_Click(sender As Object, e As EventArgs) Handles mnuLamMoi.Click
+        btnLamMoi_Click(sender, e)
+    End Sub
+
+    Private Sub mnuThem_Click(sender As Object, e As EventArgs) Handles mnuThem.Click
+        btnThem_Click(sender, e)
+    End Sub
+
+    Private Sub mnuSua_Click(sender As Object, e As EventArgs) Handles mnuSua.Click
+        btnSua_Click(sender, e)
+    End Sub
+
+    Private Sub mnuXoa_Click(sender As Object, e As EventArgs) Handles mnuXoa.Click
+        btnXoa_Click(sender, e)
+    End Sub
+
+    Private Sub mnuThoat_Click(sender As Object, e As EventArgs) Handles mnuThoat.Click
+        If MessageBox.Show("Bạn có muốn thoát?", "Xác nhận", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+            Application.Exit()
+        End If
+    End Sub
+
+    Private Sub mnuHuongDan_Click(sender As Object, e As EventArgs) Handles mnuHuongDan.Click
+        MessageBox.Show("Họ và tên: [Điền họ tên của bạn]" & vbCrLf & "MSSV: [Điền MSSV]", "Giới thiệu sinh viên")
+    End Sub
+
+End Class
