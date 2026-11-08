@@ -580,6 +580,22 @@
     </div>
   </div>
 
+  <!-- Thanh điều khiển nhanh: Tự ý Bật/Tắt & Chỉnh Scale ngay ngoài mặt chính -->
+  <div class="mode-bar" style="background:#ffffff;padding:8px 16px;gap:12px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;user-select:none;">
+      <input type="checkbox" id="quick-floating-toggle" checked style="width:15px;height:15px;accent-color:var(--primary);cursor:pointer;" />
+      <span id="quick-floating-status">Thanh nổi: Đang Bật</span>
+    </label>
+
+    <div style="display:flex;align-items:center;gap:5px;margin-left:auto;">
+      <span style="font-size:11.5px;color:var(--text-secondary);font-weight:500;">Scale:</span>
+      <button type="button" class="btn" id="btn-scale-down" style="height:24px;padding:0 7px;font-weight:700;" title="Thu nhỏ giao diện">−</button>
+      <span id="quick-scale-badge" style="min-width:40px;text-align:center;font-size:11.5px;font-weight:700;color:var(--text);">100%</span>
+      <button type="button" class="btn" id="btn-scale-up" style="height:24px;padding:0 7px;font-weight:700;" title="Phóng to giao diện">+</button>
+      <button type="button" class="btn" id="btn-scale-reset" style="height:24px;padding:0 6px;font-size:11px;" title="Đặt lại kích thước & vị trí mặc định">Reset</button>
+    </div>
+  </div>
+
   <!-- Tabs -->
   <nav class="nav-tabs">
     <button class="tab-item active" data-target="pane-vocab">Từ vựng đã lưu</button>
@@ -691,6 +707,26 @@
 
     <!-- HỘP HIỂN THỊ KẾT QUẢ KIỂM TRA / LỖI SAI API KEY HOẶC SAI MODEL -->
     <div class="alert-box" id="api-alert-box"></div>
+
+    <div class="switch-row">
+      <span>Hiển thị thanh nổi &amp; cửa sổ Lexis trên trang</span>
+      <input type="checkbox" id="floating-ui-toggle" checked />
+    </div>
+
+    <div class="field" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <label class="field-label" style="margin-bottom:0;">Tỉ lệ kích thước (Scale giao diện)</label>
+        <span id="ui-scale-label" style="font-weight:700;font-size:12px;color:var(--text);">100%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:11px;color:var(--text-muted);">80%</span>
+        <input type="range" id="ui-scale-range" min="80" max="140" step="5" value="100" style="flex:1;accent-color:var(--primary);cursor:pointer;" />
+        <span style="font-size:11px;color:var(--text-muted);">140%</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+        Thu nhỏ hoặc phóng to toàn bộ cửa sổ nổi &amp; thanh kéo thả để vừa mắt nhất.
+      </div>
+    </div>
 
     <div class="switch-row">
       <span>Tự động dịch khi mở trang web</span>

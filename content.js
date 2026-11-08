@@ -66,7 +66,9 @@
   let settings = {
     provider: 'gemini',
     autoTranslate: false,
-    displayMode: 'bilingual' // 'bilingual' | 'word_by_word' | 'replace'
+    displayMode: 'bilingual', // 'bilingual' | 'word_by_word' | 'replace'
+    floatingUIEnabled: true,
+    uiScale: 100
   };
 
   let learnedWords = [];
@@ -81,9 +83,11 @@
   };
 
   let winState = {
-    mode: 'minimized', // 'open' | 'minimized' | 'closed'
+    mode: 'minimized', // 'open' | 'minimized' | 'hidden'
     winLeft: null,
     winTop: null,
+    winWidth: 400,
+    winHeight: 460,
     launcherLeft: null,
     launcherTop: null,
     activeTab: 'pane-gt' // 'pane-gt' | 'pane-vocab' | 'pane-grammar'
@@ -265,7 +269,7 @@
     selectionPillEl.className = 'lw-selection-pill';
     selectionPillEl.innerHTML = `<span class="lw-pill-dot"></span><span>Dịch &amp; Giải thích</span>`;
 
-    // 3. Draggable Minimized Launcher Pill (Có thể kéo thả tự do, không che YouTube)
+    // 3. Draggable Minimized Launcher Pill (Có thể kéo thả tự do, có nút × để tắt hẳn)
     const isPdfPage = isCurrentDocumentPdf();
     launcherEl = document.createElement('div');
     launcherEl.className = 'lw-launcher';
@@ -276,10 +280,11 @@
       </div>
       <button class="lw-launcher-btn" id="lw-launcher-translate">${isPdfPage ? '📄 Dịch PDF này' : 'Dịch trang'}</button>
       <button class="lw-launcher-btn" id="lw-launcher-pdf" title="Mở Trình đọc & Dịch file PDF chuyên dụng">📄 PDF</button>
-      <button class="lw-launcher-btn primary" id="lw-launcher-open" title="Mở cửa sổ dịch & từ vựng (Alt+L)">Mở cửa sổ ❐</button>
+      <button class="lw-launcher-btn primary" id="lw-launcher-open" title="Mở cửa sổ dịch & từ vựng (Alt+L)">Mở ❐</button>
+      <button class="lw-launcher-close" id="lw-launcher-close" title="Tắt hẳn thanh nổi này (Bật lại trong Popup hoặc bấm Alt+L)">×</button>
     `;
 
-    // 4. Persistent Draggable Floating Window (400px × 300–500px, chỉ đóng khi bấm ×)
+    // 4. Persistent Draggable & Resizable Floating Window (Tự ý kéo thả, tự ý kéo giãn kích thước & Scale)
     windowEl = document.createElement('section');
     windowEl.className = 'lw-window';
     windowEl.innerHTML = `
@@ -291,8 +296,13 @@
           <span class="lw-win-badge" id="lw-win-count">${learnedWords.length} từ</span>
         </div>
         <div class="lw-win-controls">
-          <button class="lw-win-ctrl-btn" id="lw-win-minimize" title="Thu nhỏ thành thanh gọn (—)">—</button>
-          <button class="lw-win-ctrl-btn close" id="lw-win-close" title="Đóng cửa sổ (Chỉ tắt khi bấm nút này)">×</button>
+          <div class="lw-win-scale-group" title="Thu nhỏ / Phóng to tỉ lệ giao diện (Scale)">
+            <button class="lw-win-ctrl-btn" id="lw-win-scale-down" style="width:20px;height:20px;font-size:12px;" title="Thu nhỏ tỉ lệ (Scale -)">−</button>
+            <span class="lw-win-scale-label" id="lw-win-scale-label" title="Bấm để đặt lại 100%">100%</span>
+            <button class="lw-win-ctrl-btn" id="lw-win-scale-up" style="width:20px;height:20px;font-size:12px;" title="Phóng to tỉ lệ (Scale +)">+</button>
+          </div>
+          <button class="lw-win-ctrl-btn" id="lw-win-minimize" title="Thu gọn xuống thanh nhỏ (—)">—</button>
+          <button class="lw-win-ctrl-btn close" id="lw-win-close" title="Tắt hẳn cửa sổ khỏi màn hình (Bật lại bằng Alt+L hoặc trong Popup)">×</button>
         </div>
       </header>
 
@@ -431,6 +441,13 @@
           <button class="lw-dock-btn" id="lw-dock-btn">${isPdfPage ? 'Dịch PDF' : 'Dịch trang'}</button>
         </div>
       </footer>
+
+      <!-- Các góc và cạnh kéo giãn kích thước tự do (Resize Handles) -->
+      <div class="lw-resize-handle lw-resize-e" data-dir="e" title="Kéo để chỉnh chiều rộng"></div>
+      <div class="lw-resize-handle lw-resize-w" data-dir="w" title="Kéo để chỉnh chiều rộng"></div>
+      <div class="lw-resize-handle lw-resize-s" data-dir="s" title="Kéo để chỉnh chiều cao"></div>
+      <div class="lw-resize-handle lw-resize-se" data-dir="se" title="Kéo góc để chỉnh kích thước tùy ý">◢</div>
+      <div class="lw-resize-handle lw-resize-sw" data-dir="sw" title="Kéo góc để chỉnh kích thước tùy ý">◣</div>
     `;
 
     // 5. Error Notification Toast
@@ -457,7 +474,7 @@
     restoreWindowPositionAndMode();
     renderWindowVocabList();
 
-    // Kích hoạt kéo thả mượt mà cho cả Cửa sổ 400px và Thanh thu nhỏ
+    // Kích hoạt kéo thả mượt mà cho cả Cửa sổ và Thanh thu nhỏ
     makeDraggable(windowEl, windowEl.querySelector('#lw-win-drag-handle'), (left, top) => {
       winState.winLeft = left;
       winState.winTop = top;
@@ -467,6 +484,15 @@
     makeDraggable(launcherEl, launcherEl.querySelector('#lw-launcher-drag'), (left, top) => {
       winState.launcherLeft = left;
       winState.launcherTop = top;
+      saveWinState();
+    });
+
+    // Kích hoạt kéo giãn kích thước tự do ở các góc & cạnh cửa sổ (Resize Handles)
+    makeResizable(windowEl, (width, height, left, top) => {
+      winState.winWidth = width;
+      winState.winHeight = height;
+      winState.winLeft = left;
+      winState.winTop = top;
       saveWinState();
     });
   }
@@ -484,7 +510,7 @@
     let initialTop = 0;
 
     handleEl.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button, input, select, textarea')) return;
+      if (e.target.closest('button, input, select, textarea, .lw-win-scale-label')) return;
       isDragging = true;
       handleEl.setPointerCapture(e.pointerId);
 
@@ -531,14 +557,186 @@
     handleEl.addEventListener('pointercancel', stopDrag);
   }
 
+  /**
+   * Hàm hỗ trợ kéo giãn kích thước cửa sổ tự do ở các cạnh & góc (Free Resize)
+   */
+  function makeResizable(targetEl, onSaveGeometry) {
+    if (!targetEl) return;
+    const handles = targetEl.querySelectorAll('.lw-resize-handle');
+
+    handles.forEach((handle) => {
+      let isResizing = false;
+      let dir = 'se';
+      let startX = 0;
+      let startY = 0;
+      let startW = 400;
+      let startH = 460;
+      let startLeft = 0;
+      let startTop = 0;
+
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isResizing = true;
+        dir = handle.getAttribute('data-dir') || 'se';
+        handle.setPointerCapture(e.pointerId);
+
+        const rect = targetEl.getBoundingClientRect();
+        const scale = (settings.uiScale || 100) / 100;
+        startX = e.clientX;
+        startY = e.clientY;
+        startW = targetEl.offsetWidth || Math.round(rect.width / scale);
+        startH = targetEl.offsetHeight || Math.round(rect.height / scale);
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        targetEl.style.right = 'auto';
+        targetEl.style.bottom = 'auto';
+        targetEl.style.left = `${startLeft}px`;
+        targetEl.style.top = `${startTop}px`;
+      });
+
+      handle.addEventListener('pointermove', (e) => {
+        if (!isResizing) return;
+        const scale = (settings.uiScale || 100) / 100;
+        const dx = (e.clientX - startX) / scale;
+        const dy = (e.clientY - startY) / scale;
+
+        let nextW = startW;
+        let nextH = startH;
+        let nextLeft = startLeft;
+
+        const maxW = Math.max(320, Math.floor((window.innerWidth - 16) / scale));
+        const maxH = Math.max(280, Math.floor((window.innerHeight - 16) / scale));
+
+        if (dir.includes('e')) {
+          nextW = Math.max(300, Math.min(startW + dx, maxW));
+        }
+        if (dir.includes('s')) {
+          nextH = Math.max(270, Math.min(startH + dy, maxH));
+        }
+        if (dir.includes('w')) {
+          const candidateW = Math.max(300, Math.min(startW - dx, maxW));
+          const deltaW = candidateW - startW;
+          const candidateLeft = startLeft - deltaW * scale;
+          if (candidateLeft >= 8) {
+            nextW = candidateW;
+            nextLeft = candidateLeft;
+          }
+        }
+
+        targetEl.style.width = `${Math.round(nextW)}px`;
+        targetEl.style.height = `${Math.round(nextH)}px`;
+        targetEl.style.left = `${Math.round(nextLeft)}px`;
+      });
+
+      const stopResize = (e) => {
+        if (!isResizing) return;
+        isResizing = false;
+        try {
+          handle.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+
+        const rect = targetEl.getBoundingClientRect();
+        if (onSaveGeometry) {
+          onSaveGeometry(
+            targetEl.offsetWidth,
+            targetEl.offsetHeight,
+            Math.round(rect.left),
+            Math.round(rect.top)
+          );
+        }
+      };
+
+      handle.addEventListener('pointerup', stopResize);
+      handle.addEventListener('pointercancel', stopResize);
+    });
+  }
+
+  function applyUiScale(scalePct = settings.uiScale || 100, persist = false) {
+    const clamped = Math.max(75, Math.min(150, Math.round(Number(scalePct) / 5) * 5));
+    settings.uiScale = clamped;
+    const ratio = (clamped / 100).toFixed(2);
+
+    if (windowEl) {
+      windowEl.style.setProperty('--lw-scale', ratio);
+      const label = windowEl.querySelector('#lw-win-scale-label');
+      if (label) label.textContent = `${clamped}%`;
+    }
+    if (launcherEl) {
+      launcherEl.style.setProperty('--lw-scale', ratio);
+    }
+
+    clampFloatingElementsToViewport();
+
+    if (persist) {
+      chrome.storage.local.set({ settings });
+    }
+  }
+
+  function clampFloatingElementsToViewport() {
+    if (windowEl && windowEl.style.left) {
+      const rect = windowEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const clampedLeft = Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8));
+        const clampedTop = Math.max(8, Math.min(rect.top, window.innerHeight - rect.height - 8));
+        windowEl.style.left = `${Math.round(clampedLeft)}px`;
+        windowEl.style.top = `${Math.round(clampedTop)}px`;
+      }
+    }
+    if (launcherEl && launcherEl.style.left) {
+      const rect = launcherEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const clampedLeft = Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8));
+        const clampedTop = Math.max(8, Math.min(rect.top, window.innerHeight - rect.height - 8));
+        launcherEl.style.left = `${Math.round(clampedLeft)}px`;
+        launcherEl.style.top = `${Math.round(clampedTop)}px`;
+      }
+    }
+  }
+
+  function resetWindowGeometry() {
+    winState.winWidth = 400;
+    winState.winHeight = 460;
+    winState.winLeft = null;
+    winState.winTop = null;
+    winState.launcherLeft = null;
+    winState.launcherTop = null;
+    if (windowEl) {
+      windowEl.style.width = '400px';
+      windowEl.style.height = '460px';
+      windowEl.style.left = 'auto';
+      windowEl.style.top = '64px';
+      windowEl.style.right = '20px';
+      windowEl.style.bottom = 'auto';
+    }
+    if (launcherEl) {
+      launcherEl.style.left = 'auto';
+      launcherEl.style.top = 'auto';
+      launcherEl.style.right = '20px';
+      launcherEl.style.bottom = '20px';
+    }
+    applyUiScale(100, true);
+    saveWinState();
+  }
+
   function restoreWindowPositionAndMode() {
     if (!windowEl || !launcherEl) return;
 
     windowEl.querySelector('#lw-dock-mode').value = settings.displayMode || 'bilingual';
 
+    if (typeof winState.winWidth === 'number' && winState.winWidth >= 300) {
+      windowEl.style.width = `${Math.min(winState.winWidth, window.innerWidth - 20)}px`;
+    }
+    if (typeof winState.winHeight === 'number' && winState.winHeight >= 270) {
+      windowEl.style.height = `${Math.min(winState.winHeight, window.innerHeight - 20)}px`;
+    }
+
+    applyUiScale(settings.uiScale || 100, false);
+
     if (typeof winState.winLeft === 'number' && typeof winState.winTop === 'number') {
-      const clampedLeft = Math.max(8, Math.min(winState.winLeft, window.innerWidth - 410));
-      const clampedTop = Math.max(8, Math.min(winState.winTop, window.innerHeight - 340));
+      const clampedLeft = Math.max(8, Math.min(winState.winLeft, window.innerWidth - 320));
+      const clampedTop = Math.max(8, Math.min(winState.winTop, window.innerHeight - 280));
       windowEl.style.right = 'auto';
       windowEl.style.bottom = 'auto';
       windowEl.style.left = `${clampedLeft}px`;
@@ -555,23 +753,44 @@
     }
 
     switchWindowTab(winState.activeTab || 'pane-gt', false);
-    applyWindowVisibility(winState.mode || 'minimized', false);
+    const initialMode = settings.floatingUIEnabled === false ? 'hidden' : (winState.mode || 'minimized');
+    applyWindowVisibility(initialMode, false);
   }
 
   function applyWindowVisibility(mode, persist = true) {
+    if (!windowEl || !launcherEl) return;
+
+    if (settings.floatingUIEnabled === false && mode !== 'open' && mode !== 'minimized') {
+      mode = 'hidden';
+    }
+
     winState.mode = mode;
+
     if (mode === 'open') {
+      settings.floatingUIEnabled = true;
+      windowEl.classList.remove('is-hidden');
       windowEl.classList.add('is-open');
       launcherEl.classList.add('is-hidden');
+      clampFloatingElementsToViewport();
     } else if (mode === 'minimized') {
+      settings.floatingUIEnabled = true;
       windowEl.classList.remove('is-open');
+      windowEl.classList.add('is-hidden');
       launcherEl.classList.remove('is-hidden');
+      clampFloatingElementsToViewport();
     } else {
-      // 'closed' khi bấm nút ×: đóng hẳn cửa sổ 400px, chỉ hiện nút mở nhỏ gọn
+      // 'hidden' / 'closed' khi bấm nút × hoặc tắt công tắc: ẩn hoàn toàn cả cửa sổ lẫn thanh nổi
       windowEl.classList.remove('is-open');
-      launcherEl.classList.remove('is-hidden');
+      windowEl.classList.add('is-hidden');
+      launcherEl.classList.add('is-hidden');
+      hideSelectionPill();
+      hideTooltip();
     }
-    if (persist) saveWinState();
+
+    if (persist) {
+      saveWinState();
+      chrome.storage.local.set({ settings });
+    }
   }
 
   function switchWindowTab(tabId, persist = true) {
@@ -1827,8 +2046,9 @@
       windowEl?.querySelector('#lw-sug-dropdown')?.classList.remove('is-open');
     });
 
-    // Double-Click vào từ đơn bất kỳ trên trang -> Mở cửa sổ 400px & dịch ngay
+    // Double-Click vào từ đơn bất kỳ trên trang -> Mở cửa sổ & dịch ngay
     document.addEventListener('dblclick', (e) => {
+      if (settings.floatingUIEnabled === false) return;
       if (e.composedPath().includes(shadowHost)) return;
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : '';
@@ -1841,9 +2061,11 @@
     });
 
     document.addEventListener('mouseup', (e) => {
+      if (settings.floatingUIEnabled === false) return;
       if (e.composedPath().includes(shadowHost)) return;
 
       setTimeout(() => {
+        if (settings.floatingUIEnabled === false) return;
         const sel = window.getSelection();
         const text = sel ? sel.toString().trim() : '';
 
@@ -1865,11 +2087,20 @@
       }, 20);
     });
 
-    // Phím tắt Alt+L để bật/thu nhỏ nhanh cửa sổ nổi 400px
+    window.addEventListener('resize', () => {
+      clampFloatingElementsToViewport();
+    });
+
+    // Phím tắt Alt+L để Bật / Tắt nhanh cửa sổ nổi bất kỳ lúc nào
     document.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
-        applyWindowVisibility(winState.mode === 'open' ? 'minimized' : 'open');
+        if (settings.floatingUIEnabled === false || winState.mode === 'hidden') {
+          settings.floatingUIEnabled = true;
+          applyWindowVisibility('open');
+        } else {
+          applyWindowVisibility(winState.mode === 'open' ? 'minimized' : 'open');
+        }
       }
     });
 
@@ -1882,9 +2113,14 @@
       }
     });
 
-    // Nút điều khiển Thanh thu nhỏ (Launcher) & Cửa sổ 400px
+    // Nút điều khiển Thanh thu nhỏ (Launcher) & Cửa sổ
     launcherEl.querySelector('#lw-launcher-open').addEventListener('click', () => {
       applyWindowVisibility('open');
+    });
+
+    launcherEl.querySelector('#lw-launcher-close')?.addEventListener('click', () => {
+      settings.floatingUIEnabled = false;
+      applyWindowVisibility('hidden', true);
     });
 
     launcherEl.querySelector('#lw-launcher-translate').addEventListener('click', () => {
@@ -1903,13 +2139,27 @@
       openPdfStudio(true);
     });
 
+    // Nút chỉnh tỉ lệ Scale (− / 100% / +) ngay trên tiêu đề cửa sổ nổi
+    windowEl.querySelector('#lw-win-scale-down')?.addEventListener('click', () => {
+      applyUiScale((settings.uiScale || 100) - 5, true);
+    });
+
+    windowEl.querySelector('#lw-win-scale-up')?.addEventListener('click', () => {
+      applyUiScale((settings.uiScale || 100) + 5, true);
+    });
+
+    windowEl.querySelector('#lw-win-scale-label')?.addEventListener('click', () => {
+      applyUiScale(100, true);
+    });
+
     windowEl.querySelector('#lw-win-minimize').addEventListener('click', () => {
       applyWindowVisibility('minimized');
     });
 
-    // Chỉ đóng cửa sổ khi người dùng chủ động bấm nút ×
+    // Bấm nút × trên cửa sổ: Tắt hẳn hoàn toàn khỏi màn hình (không vướng thanh nhỏ)
     windowEl.querySelector('#lw-win-close').addEventListener('click', () => {
-      applyWindowVisibility('closed');
+      settings.floatingUIEnabled = false;
+      applyWindowVisibility('hidden', true);
     });
 
     // Chuyển đổi 3 Tab trong cửa sổ 400px
@@ -2153,9 +2403,23 @@
 
       if (changes.settings?.newValue) {
         const prevMode = settings.displayMode;
+        const prevScale = settings.uiScale;
+        const prevEnabled = settings.floatingUIEnabled;
         settings = { ...settings, ...changes.settings.newValue };
         if (windowEl) {
           windowEl.querySelector('#lw-dock-mode').value = settings.displayMode || 'bilingual';
+        }
+        if (prevScale !== settings.uiScale) {
+          applyUiScale(settings.uiScale || 100, false);
+        }
+        if (prevEnabled !== settings.floatingUIEnabled) {
+          if (settings.floatingUIEnabled === false) {
+            applyWindowVisibility('hidden', false);
+          } else if (winState.mode === 'hidden') {
+            applyWindowVisibility('minimized', false);
+          } else {
+            applyWindowVisibility(winState.mode || 'minimized', false);
+          }
         }
         if (isPageTranslated && prevMode !== settings.displayMode) {
           translateCurrentPage();
@@ -2190,7 +2454,24 @@
         return false;
       }
       if (msg.action === 'OPEN_FLOATING_WINDOW') {
+        settings.floatingUIEnabled = true;
         applyWindowVisibility('open');
+        sendResponse({ success: true });
+        return false;
+      }
+      if (msg.action === 'SET_FLOATING_UI_ENABLED') {
+        const enabled = Boolean(msg.payload?.enabled);
+        settings.floatingUIEnabled = enabled;
+        if (!enabled) {
+          applyWindowVisibility('hidden', false);
+        } else {
+          applyWindowVisibility(winState.mode === 'open' ? 'open' : 'minimized', false);
+        }
+        sendResponse({ success: true });
+        return false;
+      }
+      if (msg.action === 'RESET_WINDOW_GEOMETRY') {
+        resetWindowGeometry();
         sendResponse({ success: true });
         return false;
       }

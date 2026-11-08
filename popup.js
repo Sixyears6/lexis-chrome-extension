@@ -22,7 +22,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     groqModel: 'llama-3.3-70b-versatile',
     openaiModel: 'gpt-4o-mini',
     autoTranslate: false,
-    displayMode: 'bilingual'
+    displayMode: 'bilingual',
+    floatingUIEnabled: true,
+    uiScale: 100
   };
 
   let learnedWords = [];
@@ -135,13 +137,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('btn-open-float')?.addEventListener('click', async () => {
+      settings.floatingUIEnabled = true;
+      await chrome.storage.local.set({ settings });
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
       try {
         await chrome.tabs.sendMessage(tab.id, { action: 'OPEN_FLOATING_WINDOW' });
         window.close();
       } catch (_) {
-        showAlert('Hãy tải lại (F5) trang web đang mở để bật cửa sổ nổi 400px.', 'error');
+        showAlert('Hãy tải lại (F5) trang web đang mở để bật cửa sổ nổi.', 'error');
       }
     });
 
@@ -533,6 +537,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('auto-translate').checked = Boolean(settings.autoTranslate);
 
+    const isFloatingEnabled = settings.floatingUIEnabled !== false;
+    const floatingToggle = document.getElementById('floating-ui-toggle');
+    const quickFloatingToggle = document.getElementById('quick-floating-toggle');
+    const quickFloatingStatus = document.getElementById('quick-floating-status');
+
+    if (floatingToggle) floatingToggle.checked = isFloatingEnabled;
+    if (quickFloatingToggle) quickFloatingToggle.checked = isFloatingEnabled;
+    if (quickFloatingStatus) {
+      quickFloatingStatus.textContent = isFloatingEnabled ? 'Thanh nổi: Đang Bật' : 'Thanh nổi: Đã Tắt';
+    }
+
+    const scaleRange = document.getElementById('ui-scale-range');
+    const scaleLabel = document.getElementById('ui-scale-label');
+    const quickScaleBadge = document.getElementById('quick-scale-badge');
+    const currentScale = settings.uiScale || 100;
+    if (scaleRange) scaleRange.value = currentScale;
+    if (scaleLabel) scaleLabel.textContent = `${currentScale}%`;
+    if (quickScaleBadge) quickScaleBadge.textContent = `${currentScale}%`;
+
     if (hasActiveApiSession()) {
       loginView.style.display = 'none';
       connectedView.style.display = 'block';
@@ -670,6 +693,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('auto-translate').addEventListener('change', async (e) => {
       settings.autoTranslate = e.target.checked;
       await chrome.storage.local.set({ settings });
+    });
+
+    const applyFloatingToggle = async (enabled) => {
+      settings.floatingUIEnabled = Boolean(enabled);
+      await chrome.storage.local.set({ settings });
+      renderSettingsView();
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'SET_FLOATING_UI_ENABLED',
+            payload: { enabled: settings.floatingUIEnabled }
+          });
+        } catch (_) {}
+      }
+    };
+
+    document.getElementById('floating-ui-toggle')?.addEventListener('change', (e) => {
+      applyFloatingToggle(e.target.checked);
+    });
+
+    document.getElementById('quick-floating-toggle')?.addEventListener('change', (e) => {
+      applyFloatingToggle(e.target.checked);
+    });
+
+    const applyUiScale = async (nextScale) => {
+      const clamped = Math.max(75, Math.min(150, Math.round(Number(nextScale) / 5) * 5));
+      settings.uiScale = clamped;
+      await chrome.storage.local.set({ settings });
+      renderSettingsView();
+    };
+
+    document.getElementById('ui-scale-range')?.addEventListener('input', (e) => {
+      applyUiScale(e.target.value);
+    });
+
+    document.getElementById('btn-scale-down')?.addEventListener('click', () => {
+      applyUiScale((settings.uiScale || 100) - 5);
+    });
+
+    document.getElementById('btn-scale-up')?.addEventListener('click', () => {
+      applyUiScale((settings.uiScale || 100) + 5);
+    });
+
+    document.getElementById('btn-scale-reset')?.addEventListener('click', async () => {
+      await applyUiScale(100);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, { action: 'RESET_WINDOW_GEOMETRY' });
+        } catch (_) {}
+      }
     });
   }
 

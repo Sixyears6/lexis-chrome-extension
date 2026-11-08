@@ -159,11 +159,32 @@
   pointer-events: auto;
   user-select: none;
   font-size: 12px;
+  transform-origin: top left;
+  transform: scale(var(--lw-scale, 1));
   transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
 }
 
 .lw-launcher.is-hidden {
   display: none !important;
+}
+
+.lw-launcher-close {
+  all: unset;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #71717a;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.lw-launcher-close:hover {
+  background: #7f1d1d;
+  color: #fecaca;
 }
 
 .lw-launcher:hover {
@@ -223,20 +244,22 @@
 }
 
 /* ============================================================================
- * 4. PERSISTENT DRAGGABLE FLOATING WINDOW (.lw-window)
- *    Kích thước chuẩn: rộng 400px, cao 300px–500px
+ * 4. PERSISTENT DRAGGABLE & RESIZABLE FLOATING WINDOW (.lw-window)
  *    - Kéo thả tự do (Draggable)
- *    - Có thể thu nhỏ (Minimize —)
- *    - KHÔNG tự tắt khi click ra ngoài, chỉ đóng khi bấm nút ×
+ *    - Thay đổi kích thước tự do bằng chuột ở góc & cạnh (Resizable)
+ *    - Phóng to / thu nhỏ tỉ lệ giao diện (Scale 75%–150%)
+ *    - Thu nhỏ (—) hoặc Tắt hẳn (×)
  * ============================================================================ */
 .lw-window {
   position: fixed;
   top: 64px;
   right: 20px;
   width: 400px;
-  max-width: calc(100vw - 20px);
-  min-height: 320px;
-  max-height: 500px;
+  height: 460px;
+  min-width: 300px;
+  min-height: 270px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   background: #18181b;
   color: #f4f4f5;
   border: 1px solid #27272a;
@@ -248,15 +271,110 @@
   pointer-events: auto;
   z-index: 2147483646;
   opacity: 0;
-  transform: scale(0.98);
-  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  transform-origin: top left;
+  transform: scale(calc(var(--lw-scale, 1) * 0.98));
+  transition: opacity 150ms ease-out;
   visibility: hidden;
 }
 
 .lw-window.is-open {
   opacity: 1;
-  transform: scale(1);
+  transform: scale(var(--lw-scale, 1));
   visibility: visible;
+}
+
+.lw-window.is-hidden {
+  display: none !important;
+}
+
+.lw-win-scale-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #1f1f23;
+  border: 1px solid #27272a;
+  border-radius: 5px;
+  padding: 1px 3px;
+  margin-right: 4px;
+}
+
+.lw-win-scale-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #d4d4d8;
+  min-width: 32px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.lw-win-scale-label:hover {
+  color: #ffffff;
+}
+
+/* Các thanh & góc nắm kéo đổi kích thước cửa sổ (Resize Handles) */
+.lw-resize-handle {
+  position: absolute;
+  z-index: 40;
+  user-select: none;
+}
+
+.lw-resize-e {
+  top: 38px;
+  right: 0;
+  bottom: 14px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.lw-resize-w {
+  top: 38px;
+  left: 0;
+  bottom: 14px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.lw-resize-s {
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.lw-resize-se {
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2px;
+  color: #52525b;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.lw-resize-se:hover,
+.lw-resize-sw:hover {
+  color: #e4e4e7;
+}
+
+.lw-resize-sw {
+  left: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nesw-resize;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 2px;
+  color: #52525b;
+  font-size: 9px;
+  line-height: 1;
 }
 
 /* Thanh tiêu đề kéo thả (Draggable Titlebar) */
@@ -524,12 +642,12 @@
   background: #18181b;
 }
 
-/* Vùng nội dung cuộn mượt (Cao trong khung 300px–500px) */
+/* Vùng nội dung cuộn mượt, tự động giãn nở theo chiều cao cửa sổ */
 .lw-win-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
-  max-height: 330px;
 }
 
 .lw-tab-pane {

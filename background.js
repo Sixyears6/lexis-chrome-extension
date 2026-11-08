@@ -17,7 +17,9 @@ const DEFAULT_SETTINGS = {
   groqModel: 'llama-3.3-70b-versatile',
   openaiModel: 'gpt-4o-mini',
   autoTranslate: false,
-  displayMode: 'bilingual'         // 'bilingual' (Song ngữ bên dưới) | 'word_by_word' (Dịch từng từ) | 'replace' (Thay thế)
+  displayMode: 'bilingual',        // 'bilingual' (Song ngữ bên dưới) | 'word_by_word' (Dịch từng từ) | 'replace' (Thay thế)
+  floatingUIEnabled: true,         // Bật/tắt thanh công cụ & cửa sổ nổi trên trang
+  uiScale: 100                     // 80% -> 140% tỉ lệ kích thước giao diện
 };
 
 const DEFAULT_LEARNED_WORDS = [
