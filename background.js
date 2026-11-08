@@ -261,18 +261,32 @@ async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSett
     }
 
     let response;
-    try {
-      response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-          'Api-Revision': '2026-05-20'
-        },
-        body: JSON.stringify(body)
-      });
-    } catch (networkErr) {
-      throw new Error(`Lỗi kết nối mạng tới Gemini API: ${networkErr.message}`);
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+            'Api-Revision': '2026-05-20'
+          },
+          body: JSON.stringify(body)
+        });
+      } catch (networkErr) {
+        throw new Error(`Lỗi kết nối mạng tới Gemini API: ${networkErr.message}`);
+      }
+
+      if (response.status === 429 && attempts < maxAttempts) {
+        // Tự động chờ khi máy chủ Gemini quá tải hoặc chạm 15 RPM
+        const waitMs = attempts === 1 ? 5000 : 12000;
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+      break;
     }
 
     if (!response.ok) {

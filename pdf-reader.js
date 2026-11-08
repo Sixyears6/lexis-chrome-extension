@@ -942,60 +942,62 @@
 
     try {
       const paras = state.paragraphs;
-      const chunkSize = isWbw ? 18 : 30;
+      if (paras.length === 0) {
+        state.translated = true;
+        return;
+      }
 
-      for (let i = 0; i < paras.length; i += chunkSize) {
-        const chunk = paras.slice(i, i + chunkSize);
-        const docText = chunk.map((p, idx) => `[[[${idx + 1}]]]\n${p.text}`).join('\n\n');
+      // TỐI ƯU HẠN MỨC (RATE LIMIT): Gom TOÀN BỘ các đoạn văn trong 1 trang vào DUY NHẤT 1 request
+      // Không chia nhỏ chunk 18 hay 30 nữa, giảm số request tới 80-90%
+      const docText = paras.map((p, idx) => `[[[${idx + 1}]]]\n${p.text}`).join('\n\n');
 
-        const res = await chrome.runtime.sendMessage({
-          action: isWbw ? 'TRANSLATE_WORD_BY_WORD' : 'TRANSLATE_BATCH',
-          payload: {
-            pageTitle: `${currentDocTitle} - Trang ${pageNum}`,
-            documentText: docText,
-            totalCount: chunk.length
+      const res = await chrome.runtime.sendMessage({
+        action: isWbw ? 'TRANSLATE_WORD_BY_WORD' : 'TRANSLATE_BATCH',
+        payload: {
+          pageTitle: `${currentDocTitle} - Trang ${pageNum}`,
+          documentText: docText,
+          totalCount: paras.length
+        }
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Lỗi khi gọi API dịch trang PDF.');
+      }
+
+      const rawOutput = isWbw
+        ? res.data?.wordByWordDocument || ''
+        : res.data?.translatedDocument || '';
+
+      const blockRegex = /\[\[\[\s*(\d+)\s*\]\]\]\s*([\s\S]*?)(?=(?:\[\[\[\s*\d+\s*\]\]\]|$))/g;
+      let match;
+      let count = 0;
+
+      while ((match = blockRegex.exec(rawOutput)) !== null) {
+        const idx = parseInt(match[1], 10) - 1;
+        const text = match[2].trim();
+        if (paras[idx] && text) {
+          if (isWbw) {
+            paras[idx].wbwText = text;
+          } else {
+            paras[idx].translatedText = text;
+          }
+          count++;
+        }
+      }
+
+      // Fallback nếu mô hình không trả thẻ [[[ID]]]
+      if (count === 0 && rawOutput.trim()) {
+        const splitParas = rawOutput.split(/\n\s*\n/).filter((x) => x.trim());
+        paras.forEach((item, idx) => {
+          if (splitParas[idx]) {
+            if (isWbw) item.wbwText = splitParas[idx].trim();
+            else item.translatedText = splitParas[idx].trim();
           }
         });
-
-        if (!res || !res.success) {
-          throw new Error(res?.error || 'Lỗi khi gọi API dịch trang PDF.');
-        }
-
-        const rawOutput = isWbw
-          ? res.data?.wordByWordDocument || ''
-          : res.data?.translatedDocument || '';
-
-        const blockRegex = /\[\[\[\s*(\d+)\s*\]\]\]\s*([\s\S]*?)(?=(?:\[\[\[\s*\d+\s*\]\]\]|$))/g;
-        let match;
-        let count = 0;
-
-        while ((match = blockRegex.exec(rawOutput)) !== null) {
-          const idx = parseInt(match[1], 10) - 1;
-          const text = match[2].trim();
-          if (chunk[idx] && text) {
-            if (isWbw) {
-              chunk[idx].wbwText = text;
-            } else {
-              chunk[idx].translatedText = text;
-            }
-            count++;
-          }
-        }
-
-        // Fallback nếu mô hình không trả thẻ [[[ID]]]
-        if (count === 0 && rawOutput.trim()) {
-          const splitParas = rawOutput.split(/\n\s*\n/).filter((x) => x.trim());
-          chunk.forEach((item, idx) => {
-            if (splitParas[idx]) {
-              if (isWbw) item.wbwText = splitParas[idx].trim();
-              else item.translatedText = splitParas[idx].trim();
-            }
-          });
-        }
-
-        renderPageParagraphCards(pageNum);
-        renderOverlayLayer(pageNum);
       }
+
+      renderPageParagraphCards(pageNum);
+      renderOverlayLayer(pageNum);
 
       state.translated = true;
       state.translatedMode = activeMode;
@@ -1118,6 +1120,11 @@
         }
         setStatus(`Đang dịch toàn bộ PDF: Trang ${p} / ${totalPages}...`, true);
         await translatePage(p, false);
+
+        // Khoảng nghỉ an toàn giữa các trang khi dịch toàn bộ để bảo vệ hạn mức RPM (Rate limit 15 req/min)
+        if (p < totalPages && !stopBatchRequested) {
+          await new Promise((r) => setTimeout(r, 4200));
+        }
       }
       setStatus(
         stopBatchRequested ? 'Đã tạm dừng dịch hàng loạt' : `✓ Hoàn tất dịch ${totalPages} trang PDF`,
