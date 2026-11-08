@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Lexis — Contextual Reading & Vocabulary",
-  "version": "2.0.0",
-  "description": "Minimalist contextual translation, grammar breakdown, and active vocabulary retention for Chrome.",
+  "version": "2.1.0",
+  "description": "Minimalist contextual translation, smart PDF translator studio, grammar breakdown, and active vocabulary retention for Chrome.",
   "permissions": [
     "storage",
     "activeTab",
@@ -31,7 +31,14 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["shadow-style.css"],
+      "resources": [
+        "shadow-style.css",
+        "pdf-reader.html",
+        "pdf-reader.css",
+        "pdf-reader.js",
+        "lib/pdf.min.js",
+        "lib/pdf.worker.min.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

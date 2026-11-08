@@ -16,7 +16,27 @@
 
 (() => {
   if (window.__LEXIS_CONTENT_ACTIVE__) return;
+  if (window.location.href.includes('pdf-reader.html')) return;
   window.__LEXIS_CONTENT_ACTIVE__ = true;
+
+  function isCurrentDocumentPdf() {
+    if (document.contentType === 'application/pdf') return true;
+    if (document.querySelector('embed[type="application/pdf"]')) return true;
+    if (/\.pdf($|\?|#)/i.test(window.location.pathname || '')) return true;
+    return false;
+  }
+
+  function openPdfStudio(useCurrentUrl = false) {
+    const currentUrl = window.location.href || '';
+    const isHttpPdf = useCurrentUrl && /^https?:\/\//i.test(currentUrl) && isCurrentDocumentPdf();
+    chrome.runtime.sendMessage({
+      action: 'OPEN_PDF_READER',
+      payload: {
+        pdfUrl: isHttpPdf ? currentUrl : '',
+        autoTranslate: isHttpPdf
+      }
+    });
+  }
 
   // Các thẻ kỹ thuật, media và Web Component của YouTube / Web App tuyệt đối không chạm vào
   const FORBIDDEN_TAGS = new Set([
@@ -246,6 +266,7 @@
     selectionPillEl.innerHTML = `<span class="lw-pill-dot"></span><span>Dịch &amp; Giải thích</span>`;
 
     // 3. Draggable Minimized Launcher Pill (Có thể kéo thả tự do, không che YouTube)
+    const isPdfPage = isCurrentDocumentPdf();
     launcherEl = document.createElement('div');
     launcherEl.className = 'lw-launcher';
     launcherEl.innerHTML = `
@@ -253,7 +274,8 @@
         <span class="lw-launcher-grip">⋮⋮</span>
         <span>Lexis</span>
       </div>
-      <button class="lw-launcher-btn" id="lw-launcher-translate">Dịch trang</button>
+      <button class="lw-launcher-btn" id="lw-launcher-translate">${isPdfPage ? '📄 Dịch PDF này' : 'Dịch trang'}</button>
+      <button class="lw-launcher-btn" id="lw-launcher-pdf" title="Mở Trình đọc & Dịch file PDF chuyên dụng">📄 PDF</button>
       <button class="lw-launcher-btn primary" id="lw-launcher-open" title="Mở cửa sổ dịch & từ vựng (Alt+L)">Mở cửa sổ ❐</button>
     `;
 
@@ -394,7 +416,7 @@
         </div>
       </div>
 
-      <!-- Chân cửa sổ: Điều khiển dịch toàn trang -->
+      <!-- Chân cửa sổ: Điều khiển dịch toàn trang & Mở trình dịch PDF -->
       <footer class="lw-win-footer">
         <div class="lw-footer-left">
           <select class="lw-dock-select" id="lw-dock-mode" title="Chế độ hiển thị dịch trên trang">
@@ -404,7 +426,10 @@
           </select>
           <span class="lw-dock-status" id="lw-dock-status">Sẵn sàng</span>
         </div>
-        <button class="lw-dock-btn" id="lw-dock-btn">Dịch trang</button>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <button class="lw-launcher-btn" id="lw-dock-pdf-btn" title="Mở Trình đọc & Dịch file PDF">📄 PDF</button>
+          <button class="lw-dock-btn" id="lw-dock-btn">${isPdfPage ? 'Dịch PDF' : 'Dịch trang'}</button>
+        </div>
       </footer>
     `;
 
@@ -1262,6 +1287,11 @@
   }
 
   async function translateCurrentPage() {
+    if (isCurrentDocumentPdf()) {
+      openPdfStudio(true);
+      return;
+    }
+
     if (isTranslating) return;
     isTranslating = true;
     hideErrorToast();
@@ -1858,11 +1888,19 @@
     });
 
     launcherEl.querySelector('#lw-launcher-translate').addEventListener('click', () => {
+      if (isCurrentDocumentPdf()) {
+        openPdfStudio(true);
+        return;
+      }
       if (isPageTranslated) {
         restoreOriginalPage();
       } else {
         translateCurrentPage();
       }
+    });
+
+    launcherEl.querySelector('#lw-launcher-pdf')?.addEventListener('click', () => {
+      openPdfStudio(true);
     });
 
     windowEl.querySelector('#lw-win-minimize').addEventListener('click', () => {
@@ -2093,7 +2131,15 @@
       }
     });
 
+    windowEl.querySelector('#lw-dock-pdf-btn')?.addEventListener('click', () => {
+      openPdfStudio(true);
+    });
+
     windowEl.querySelector('#lw-dock-btn').addEventListener('click', () => {
+      if (isCurrentDocumentPdf()) {
+        openPdfStudio(true);
+        return;
+      }
       if (isPageTranslated) {
         restoreOriginalPage();
       } else {

@@ -24,10 +24,11 @@ Tiện ích mở rộng Chrome thiết kế theo phong cách tối giản (Linea
 ## Cấu trúc thư mục
 
 - `manifest.json` — Cấu hình Manifest V3, quyền `storage`, `activeTab`, `scripting`, `web_accessible_resources`.
-- `background.js` — Service Worker gọi Gemini API (`gemini-3.8-flash`), Groq API (`llama-3.3-70b-versatile`) hoặc OpenAI API.
-- `content.js` — `TreeWalker` lọc `Node.TEXT_NODE` an toàn, quản lý Shadow DOM, sự kiện Hover/Click/Selection/Esc.
+- `background.js` — Service Worker gọi Gemini API (`gemini-3.8-flash`), Groq API (`llama-3.3-70b-versatile`) hoặc OpenAI API, kèm xử lý tải file PDF vượt CORS và dịch ảnh PDF Scan bằng AI Vision.
+- `content.js` — `TreeWalker` lọc `Node.TEXT_NODE` an toàn, quản lý Shadow DOM, tự động nhận diện trang PDF và kết nối với Lexis PDF Studio.
+- `pdf-reader.html`, `pdf-reader.css`, `pdf-reader.js` & `lib/pdf.min.js` — **Lexis PDF Studio**: Trình đọc & dịch PDF chuyên dụng (gom đoạn thông minh cho cả bố cục 1 cột & 2 cột, nối từ gạch ngang ngắt dòng, 3 chế độ xem Song song / Đè lên PDF / Chế độ Đọc, dịch ảnh Scan bằng AI Vision, xuất file in PDF).
 - `shadow-style.css` — CSS cho `.lw-anchor` và các thành phần bên trong Shadow DOM.
-- `popup.html` & `popup.js` — Giao diện quản lý từ vựng và cài đặt API Key.
+- `popup.html` & `popup.js` — Giao diện quản lý từ vựng, nút mở nhanh trình dịch PDF và cài đặt API Key.
 
 ---
 

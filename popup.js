@@ -116,9 +116,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --------------------------------------------------------------------------
-  // 3. HÀNH ĐỘNG DỊCH TRANG & MỞ CỬA SỔ NỔI 400PX
+  // 3. HÀNH ĐỘNG DỊCH TRANG, DỊCH PDF & MỞ CỬA SỔ NỔI 400PX
   // --------------------------------------------------------------------------
+  function isPdfTabUrl(url = '') {
+    return /\.pdf($|\?|#)/i.test(url) || url.startsWith('chrome-extension://') && url.includes('pdf');
+  }
+
   function initPageActions() {
+    document.getElementById('btn-open-pdf')?.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeUrl = tab?.url || '';
+      const pdfUrl = /^https?:\/\/.*\.pdf($|\?|#)/i.test(activeUrl) ? activeUrl : '';
+      await chrome.runtime.sendMessage({
+        action: 'OPEN_PDF_READER',
+        payload: { pdfUrl, autoTranslate: Boolean(pdfUrl) }
+      });
+      window.close();
+    });
+
     document.getElementById('btn-open-float')?.addEventListener('click', async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
@@ -133,10 +148,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('btn-translate').addEventListener('click', async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
+
+      const activeUrl = tab.url || '';
+      if (/^https?:\/\/.*\.pdf($|\?|#)/i.test(activeUrl)) {
+        await chrome.runtime.sendMessage({
+          action: 'OPEN_PDF_READER',
+          payload: { pdfUrl: activeUrl, autoTranslate: true }
+        });
+        window.close();
+        return;
+      }
+
       try {
         await chrome.tabs.sendMessage(tab.id, { action: 'TRIGGER_PAGE_TRANSLATION' });
         window.close();
       } catch (_) {
+        if (isPdfTabUrl(activeUrl)) {
+          await chrome.runtime.sendMessage({
+            action: 'OPEN_PDF_READER',
+            payload: { pdfUrl: '', autoTranslate: false }
+          });
+          window.close();
+          return;
+        }
         showAlert('Hãy tải lại (F5) trang web đang mở trước khi bấm Dịch trang.', 'error');
       }
     });

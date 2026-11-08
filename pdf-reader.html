@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lexis PDF Studio — Trình đọc & Dịch PDF Ngữ cảnh</title>
+  <link rel="stylesheet" href="pdf-reader.css" />
+</head>
+<body data-layout="split" data-display-mode="bilingual">
+  <!-- 1. TOP TOOLBAR -->
+  <header class="pdf-topbar">
+    <div class="topbar-left">
+      <div class="brand-badge">
+        <span>📄 Lexis PDF</span>
+        <span class="brand-tag">Studio</span>
+      </div>
+      <div class="doc-title-pill" id="doc-title-pill" title="Tên tài liệu PDF">Chưa mở tài liệu PDF</div>
+      <button class="btn" id="btn-open-file" title="Mở file PDF từ máy tính">📂 Chọn file PDF</button>
+      <input type="file" id="file-input-pdf" accept=".pdf,application/pdf" style="display:none;" />
+    </div>
+
+    <!-- Chế độ bố cục xem PDF (Song song / Đè lên PDF / Chế độ Đọc) -->
+    <div class="topbar-center">
+      <div class="segmented-group" id="layout-switcher" title="Chọn chế độ bố cục hiển thị PDF">
+        <button type="button" class="seg-btn active" data-layout="split">Song song (PDF + Dịch)</button>
+        <button type="button" class="seg-btn" data-layout="overlay">Đè lên PDF</button>
+        <button type="button" class="seg-btn" data-layout="reader">Chế độ Đọc</button>
+      </div>
+
+      <!-- Chế độ kiểu dịch (Song ngữ / Từng từ / Thay thế) -->
+      <select class="select-ctrl" id="select-display-mode" title="Chọn kiểu hiển thị bản dịch">
+        <option value="bilingual">Kiểu: Song ngữ bên dưới</option>
+        <option value="word_by_word">Kiểu: Dịch từng từ (Ruby)</option>
+        <option value="replace">Kiểu: Chỉ hiện bản dịch</option>
+      </select>
+    </div>
+
+    <div class="topbar-right">
+      <button class="btn" id="btn-translate-page" disabled title="Dịch trang PDF đang xem">✨ Dịch trang này</button>
+      <button class="btn btn-primary" id="btn-translate-all" disabled title="Dịch tự động toàn bộ các trang PDF">⚡ Dịch toàn bộ PDF</button>
+      <button class="btn" id="btn-export-doc" disabled title="Xuất bản dịch ra trang HTML / In PDF">🖨️ Xuất / In</button>
+      <button class="btn" id="btn-toggle-sidebar" title="Đóng/Mở thanh công cụ Từ vựng & Ngữ pháp">📚 Từ điển &amp; Sổ từ</button>
+    </div>
+  </header>
+
+  <!-- 2. SUB-TOOLBAR (ĐIỀU HƯỚNG TRANG, ZOOM, TỰ DỊCH KHI CUỘN) -->
+  <div class="pdf-subbar">
+    <div class="subbar-group">
+      <button class="btn btn-sm" id="btn-prev-page" disabled>← Trang trước</button>
+      <span>Trang</span>
+      <input type="number" class="page-jump-input" id="input-page-num" value="1" min="1" disabled />
+      <span id="label-total-pages">/ 0</span>
+      <button class="btn btn-sm" id="btn-next-page" disabled>Trang sau →</button>
+
+      <span style="color:#3f3f46;margin:0 4px;">|</span>
+
+      <button class="btn btn-sm" id="btn-zoom-out" disabled title="Thu nhỏ trang PDF">−</button>
+      <span id="label-zoom-level" style="min-width:44px;text-align:center;">120%</span>
+      <button class="btn btn-sm" id="btn-zoom-in" disabled title="Phóng to trang PDF">+</button>
+    </div>
+
+    <div class="subbar-group">
+      <label class="auto-scroll-label" title="Tự động dịch trang PDF ngay khi bạn cuộn tới trang đó">
+        <input type="checkbox" id="chk-auto-scroll-translate" checked />
+        <span>Tự dịch khi cuộn trang</span>
+      </label>
+
+      <span style="color:#3f3f46;margin:0 4px;">|</span>
+
+      <span style="font-size:11.5px;color:#a1a1aa;" title="Khi ở chế độ Đè lên PDF, giữ phím Alt để nhìn xuyên thấu bản gốc">
+        Mẹo: Bôi đen hoặc nháy đúp từ bất kỳ trên PDF để tra ngữ pháp &amp; lưu từ
+      </span>
+
+      <div class="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Sẵn sàng mở PDF</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. WORKSPACE CHÍNH -->
+  <div class="pdf-workspace">
+    <!-- Khu vực hiển thị trang PDF & Bản dịch -->
+    <main class="pdf-main-stage" id="pdf-main-stage">
+      <!-- Khung Kéo Thả / Mở PDF khi chưa có tài liệu -->
+      <div class="empty-dropzone" id="empty-dropzone">
+        <div class="drop-icon">📄</div>
+        <h2 class="drop-title">Trình đọc &amp; Dịch PDF Thông minh (Lexis PDF Studio)</h2>
+        <p class="drop-desc">
+          Kéo thả file <strong>.PDF</strong> vào bất kỳ đâu trên màn hình này, chọn file từ máy tính, hoặc dán đường dẫn URL của tài liệu PDF.<br />
+          Tự động gom đoạn văn chuẩn xác (kể cả báo cáo 2 cột), giữ nguyên từ đã học và hỗ trợ dịch cả PDF ảnh Scan bằng AI Vision.
+        </p>
+
+        <div class="drop-actions">
+          <button class="btn btn-primary" id="btn-hero-open" style="height:38px;padding:0 18px;font-size:13px;">
+            📂 Chọn file PDF từ máy tính
+          </button>
+        </div>
+
+        <div class="url-load-bar">
+          <input
+            type="url"
+            class="url-input"
+            id="input-pdf-url"
+            placeholder="Hoặc dán link PDF trực tuyến (https://.../paper.pdf)..."
+          />
+          <button class="btn" id="btn-load-url" style="height:36px;">Tải &amp; Dịch URL</button>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-item">
+            <h4>1. Gom đoạn &amp; Xử lý 2 cột</h4>
+            <p>Khắc phục triệt để lỗi dịch rời rạc từng dòng hoặc nối nhầm 2 cột trên các bài báo khoa học (IEEE, arXiv).</p>
+          </div>
+          <div class="feature-item">
+            <h4>2. Song song &amp; Đè lên PDF</h4>
+            <p>Đối chiếu trực tiếp với hình ảnh, biểu đồ, công thức gốc bên trái hoặc phủ bản dịch lên đúng tọa độ trang PDF.</p>
+          </div>
+          <div class="feature-item">
+            <h4>3. Hỗ trợ PDF Scan (AI Vision)</h4>
+            <p>Tài liệu PDF chụp ảnh không bôi đen được vẫn có thể trích xuất OCR và dịch mượt mà chỉ với 1 cú nhấp.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Danh sách các trang PDF được dựng tại đây -->
+      <div class="pages-list" id="pages-list" style="display:none;"></div>
+    </main>
+
+    <!-- Thanh bên phải: Từ điển Google Dịch, Sổ từ vựng & Mổ xẻ ngữ pháp -->
+    <aside class="pdf-sidebar" id="pdf-sidebar">
+      <nav class="sidebar-tabs">
+        <button type="button" class="side-tab active" data-pane="side-gt">Google Dịch</button>
+        <button type="button" class="side-tab" data-pane="side-grammar">Ngữ pháp câu</button>
+        <button type="button" class="side-tab" data-pane="side-vocab">Sổ từ (<span id="side-vocab-count">0</span>)</button>
+      </nav>
+
+      <div class="sidebar-body">
+        <!-- TAB 1: GOOGLE DỊCH NHANH -->
+        <div class="side-pane active" id="side-gt">
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;">
+            <select class="select-ctrl" id="gt-src-lang" style="height:28px;font-size:11.5px;">
+              <option value="auto">Tự phát hiện</option>
+              <option value="Tiếng Anh">Tiếng Anh</option>
+              <option value="Tiếng Việt">Tiếng Việt</option>
+              <option value="Tiếng Nhật">Tiếng Nhật</option>
+              <option value="Tiếng Hàn">Tiếng Hàn</option>
+              <option value="Tiếng Trung">Tiếng Trung</option>
+            </select>
+            <button class="btn btn-sm" id="gt-swap-lang" title="Đảo ngôn ngữ">⇄</button>
+            <select class="select-ctrl" id="gt-tgt-lang" style="height:28px;font-size:11.5px;">
+              <option value="Tiếng Việt">Tiếng Việt</option>
+              <option value="Tiếng Anh">Tiếng Anh</option>
+              <option value="Tiếng Nhật">Tiếng Nhật</option>
+            </select>
+          </div>
+
+          <textarea
+            class="side-textarea"
+            id="gt-input-box"
+            placeholder="Bôi đen từ/câu trên PDF hoặc nhập vào đây để dịch ngay..."
+          ></textarea>
+
+          <div style="display:flex;justify-content:space-between;gap:6px;">
+            <button class="btn btn-sm" id="gt-btn-speak">🔊 Nghe</button>
+            <button class="btn btn-sm btn-primary" id="gt-btn-run">Dịch ngay</button>
+          </div>
+
+          <div id="gt-result-area">
+            <div class="side-box" style="color:#a1a1aa;font-size:12px;">
+              Bôi đen bất kỳ từ hoặc đoạn văn nào trên trang PDF để tra nghĩa từ điển và lưu vào sổ từ vựng.
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: MỔ XẺ NGỮ PHÁP TRONG PDF -->
+        <div class="side-pane" id="side-grammar">
+          <div class="side-box" id="grammar-result-area">
+            <div style="font-weight:700;color:#ffffff;margin-bottom:4px;">Phân tích ngữ pháp &amp; Ngữ cảnh</div>
+            <div style="font-size:12px;color:#a1a1aa;">
+              Hãy bôi đen một cụm từ hoặc câu trên tài liệu PDF rồi bấm <strong>"Dịch &amp; Giải thích"</strong> để AI phân tích cấu trúc câu.
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: SỔ TỪ VỰNG ĐÃ HỌC -->
+        <div class="side-pane" id="side-vocab">
+          <div class="side-box" style="display:flex;flex-direction:column;gap:8px;">
+            <div style="font-size:11.5px;font-weight:600;color:#d4d4d8;">Thêm từ vựng mới</div>
+            <div style="display:grid;grid-template-columns:1fr 84px;gap:6px;">
+              <input type="text" class="side-input" id="voc-word-in" placeholder="Từ gốc (vd: paradigm)" />
+              <select class="select-ctrl" id="voc-pos-in" style="height:32px;">
+                <option value="n">n</option>
+                <option value="v">v</option>
+                <option value="adj">adj</option>
+                <option value="adv">adv</option>
+                <option value="phrase">phrase</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;">
+              <input type="text" class="side-input" id="voc-mean-in" placeholder="Nghĩa tiếng Việt..." />
+              <button class="btn btn-sm" id="voc-ai-btn" style="height:32px;" title="Tự điền nghĩa bằng AI">✨ AI</button>
+              <button class="btn btn-sm btn-primary" id="voc-save-btn" style="height:32px;">+ Lưu</button>
+            </div>
+          </div>
+
+          <input type="text" class="side-input" id="voc-search-in" placeholder="Tìm trong sổ từ vựng..." />
+          <div class="vocab-items-wrap" id="vocab-items-wrap"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Tooltip khi rê chuột vào từ đã thuộc (.lw-anchor) -->
+  <div class="pdf-tooltip" id="pdf-tooltip"></div>
+
+  <!-- Nút nổi khi bôi đen chữ trên PDF -->
+  <button class="pdf-sel-pill" id="pdf-sel-pill">
+    <span style="width:6px;height:6px;border-radius:50%;background:#60a5fa;"></span>
+    <span>Dịch &amp; Giải thích</span>
+  </button>
+
+  <!-- Hộp báo lỗi API -->
+  <div class="pdf-toast" id="pdf-toast"></div>
+
+  <script src="lib/pdf.min.js"></script>
+  <script src="pdf-reader.js"></script>
+</body>
+</html>

@@ -103,6 +103,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => sendResponse({ success: false, error: err.message, errorCode: err.code || 'API_ERROR' }));
       return true;
 
+    case 'OPEN_PDF_READER':
+      handleOpenPdfReader(message.payload)
+        .then((data) => sendResponse({ success: true, data }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case 'FETCH_PDF_BASE64':
+      handleFetchPdfBase64(message.payload)
+        .then((data) => sendResponse({ success: true, data }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case 'TRANSLATE_PDF_VISION_PAGE':
+      handleTranslatePdfVisionPage(message.payload)
+        .then((data) => sendResponse({ success: true, data }))
+        .catch((err) => sendResponse({ success: false, error: err.message, errorCode: err.code || 'API_ERROR' }));
+      return true;
+
     default:
       return false;
   }
@@ -193,9 +211,9 @@ function parseCleanJSON(raw) {
 }
 
 /**
- * Hàm gọi LLM thống nhất cho Gemini, Groq và OpenAI kèm bắt lỗi chi tiết
+ * Hàm gọi LLM thống nhất cho Gemini, Groq và OpenAI kèm bắt lỗi chi tiết & hỗ trợ Multimodal Image (PDF Scan)
  */
-async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSettings = null }) {
+async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSettings = null, imageInput = null }) {
   const { settings: savedSettings } = await getStorageState();
   const settings = overrideSettings ? { ...savedSettings, ...overrideSettings } : savedSettings;
   const provider = settings.provider || 'gemini';
@@ -211,10 +229,21 @@ async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSett
 
     const model = (settings.geminiModel || 'gemini-3.8-flash').trim();
 
+    const inputPayload = imageInput && imageInput.base64Data
+      ? [
+          { type: 'text', text: userPrompt },
+          {
+            type: 'image',
+            data: imageInput.base64Data,
+            mime_type: imageInput.mimeType || 'image/jpeg'
+          }
+        ]
+      : userPrompt;
+
     const body = {
       model,
       system_instruction: systemInstruction,
-      input: userPrompt,
+      input: inputPayload,
       store: false,
       generation_config: {
         temperature: 0.15
@@ -281,12 +310,24 @@ async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSett
     ? (settings.groqModel || 'llama-3.3-70b-versatile').trim()
     : (settings.openaiModel || 'gpt-4o-mini').trim();
 
+  const userContent = imageInput && imageInput.base64Data
+    ? [
+        { type: 'text', text: userPrompt },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${imageInput.mimeType || 'image/jpeg'};base64,${imageInput.base64Data}`
+          }
+        }
+      ]
+    : userPrompt;
+
   const body = {
     model,
     temperature: 0.15,
     messages: [
       { role: 'system', content: systemInstruction },
-      { role: 'user', content: userPrompt }
+      { role: 'user', content: userContent }
     ]
   };
 
@@ -592,4 +633,103 @@ async function handleTestConnection(payload) {
     provider: provider.toUpperCase(),
     model
   };
+}
+
+/**
+ * 7. Mở trình đọc & dịch PDF chuyên dụng của Lexis (pdf-reader.html)
+ */
+async function handleOpenPdfReader(payload) {
+  const { pdfUrl = '', autoTranslate = false } = payload || {};
+  const params = new URLSearchParams();
+  if (pdfUrl) params.set('url', pdfUrl);
+  if (autoTranslate) params.set('auto', '1');
+
+  const readerUrl = chrome.runtime.getURL(
+    `pdf-reader.html${params.toString() ? `?${params.toString()}` : ''}`
+  );
+  const tab = await chrome.tabs.create({ url: readerUrl });
+  return { tabId: tab?.id, url: readerUrl };
+}
+
+/**
+ * 8. Tải dữ liệu nhị phân PDF từ URL bên ngoài dưới dạng Base64 (vượt rào cản CORS)
+ */
+async function handleFetchPdfBase64(payload) {
+  const url = String(payload?.url || '').trim();
+  if (!url) throw new Error('Không có đường dẫn URL của file PDF.');
+
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`Không thể tải file PDF từ máy chủ (HTTP ${res.status}). Hãy tải file về máy và chọn "Tải file PDF từ máy".`);
+  }
+
+  const buffer = await res.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return {
+    base64: btoa(binary),
+    byteLength: bytes.byteLength
+  };
+}
+
+/**
+ * 9. Dịch trang PDF dạng ảnh quét (Scanned PDF / Image OCR + Translation) bằng AI Vision
+ */
+async function handleTranslatePdfVisionPage(payload) {
+  const { base64Data = '', mimeType = 'image/jpeg', pageNumber = 1, displayMode = 'bilingual' } = payload || {};
+  if (!base64Data) {
+    throw new Error('Không có dữ liệu hình ảnh trang PDF để phân tích.');
+  }
+
+  const { learnedWords } = await getStorageState();
+  const learnedSet = learnedWords.map((w) => w.word).filter(Boolean);
+  const keepList = learnedSet.length > 0 ? learnedSet.join(', ') : '(Không có)';
+
+  const isWbw = displayMode === 'word_by_word';
+
+  const systemInstruction = `Bạn là chuyên gia OCR và biên dịch tài liệu PDF học thuật/chuyên ngành sang tiếng Việt.
+Nhiệm vụ của bạn là đọc toàn bộ văn bản trong hình ảnh trang PDF (Trang ${pageNumber}), gom các dòng bị ngắt thành từng đoạn văn hoàn chỉnh theo đúng thứ tự đọc (trái sang phải, trên xuống dưới, xử lý đúng bố cục 1 cột hoặc 2 cột), sau đó dịch sang tiếng Việt.
+
+QUY TẮC BẮT BUỘC:
+1. Trả về JSON chính xác theo cấu trúc {"blocks": [{"original": "...", "translated": "...", "wbw": "..."}]}.
+2. Trường "original": Văn bản gốc trích xuất chuẩn xác của đoạn văn đó (đã nối các từ bị gạch nối ngắt dòng).
+3. Trường "translated": Bản dịch tiếng Việt mượt mà, tự nhiên, chuẩn thuật ngữ.
+4. VỚI CÁC TỪ ĐÃ HỌC SAU ĐÂY (${keepList}): Giữ nguyên từ ngoại ngữ đó trong câu dịch tiếng Việt, không dịch sang tiếng Việt.
+5. Trường "wbw": ${
+    isWbw
+      ? 'Phân tách câu gốc thành từng từ/cụm ngắn kèm nghĩa trong ngoặc vuông dạng từ_gốc[nghĩa_ngắn] (ví dụ: She[Cô ấy] read[đã đọc] a[một] book[cuốn sách]).'
+      : 'Để chuỗi rỗng "".'
+  }`;
+
+  const userPrompt = `Hãy trích xuất văn bản và dịch Trang ${pageNumber} của tài liệu PDF này. Trả về JSON theo đúng schema.`;
+
+  const jsonSchema = {
+    type: 'object',
+    properties: {
+      blocks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            original: { type: 'string' },
+            translated: { type: 'string' },
+            wbw: { type: 'string' }
+          },
+          required: ['original', 'translated', 'wbw']
+        }
+      }
+    },
+    required: ['blocks']
+  };
+
+  return await callLLM({
+    systemInstruction,
+    userPrompt,
+    jsonSchema,
+    imageInput: { base64Data, mimeType }
+  });
 }
