@@ -241,7 +241,10 @@
   // KHỞI TẠO GIAO DIỆN SHADOW DOM (CỬA SỔ NỔI 400PX & THANH THU NHỎ KÉO THẢ)
   // --------------------------------------------------------------------------
   function mountShadowUI() {
-    if (document.getElementById('lexis-shadow-host')) return;
+    const staleHost = document.getElementById('lexis-shadow-host');
+    if (staleHost) {
+      staleHost.remove();
+    }
 
     shadowHost = document.createElement('div');
     shadowHost.id = 'lexis-shadow-host';
@@ -1599,12 +1602,10 @@
       }
 
       if (uncachedUnits.length > 0) {
-        const chunkSize = isWbwMode ? 25 : 40;
-        for (let i = 0; i < uncachedUnits.length; i += chunkSize) {
-          const chunk = uncachedUnits.slice(i, i + chunkSize);
-          dockStatus.textContent = `${Math.min(i + chunk.length, uncachedUnits.length)}/${uncachedUnits.length} đoạn`;
-          await executeDocumentChunkTranslation(chunk, isWbwMode);
-        }
+        // GOM DỮ LIỆU GỬI 1 LẦN MỖI TRANG (Single-Request per Page):
+        // Xóa bỏ hoàn toàn việc chia nhỏ (chunking), gom toàn bộ các đoạn trên trang gửi trong đúng 1 request API duy nhất
+        dockStatus.textContent = `Đang dịch ${uncachedUnits.length} đoạn (1 request)...`;
+        await executeSinglePageTranslation(uncachedUnits, isWbwMode);
       }
 
       isPageTranslated = true;
@@ -1621,7 +1622,7 @@
     }
   }
 
-  async function executeDocumentChunkTranslation(units, isWbwMode = false) {
+  async function executeSinglePageTranslation(units, isWbwMode = false) {
     if (!units || units.length === 0) return;
 
     const numMap = new Map();

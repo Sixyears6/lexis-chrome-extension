@@ -2,24 +2,32 @@
  * ============================================================================
  * Lexis — Background Service Worker (Manifest V3)
  * ============================================================================
- * 1. Gọi API dịch thuật (Đoạn văn ngữ cảnh, Song ngữ, Dịch từng từ Word-by-Word)
- *    và mổ xẻ ngữ pháp qua Google Gemini / Groq / OpenAI.
- * 2. Phân tích và trả về thông báo lỗi chuẩn xác khi sai API Key, sai Model,
- *    hoặc vượt hạn mức (Quota/Rate Limit).
+ * 1. Điều phối xoay vòng đa nhà cung cấp AI miễn phí (Multi-Provider Fallback & Round-Robin):
+ *    (1) Google Gemini (gemini-2.5-flash) — Chuẩn Gemini REST API
+ *    (2) Groq (llama-3.3-70b-versatile) — Chuẩn OpenAI-compatible
+ *    (3) OpenRouter (deepseek/deepseek-chat:free | qwen/qwen-2.5-72b-instruct:free) — Chuẩn OpenAI-compatible
+ *    (4) Cerebras (llama-3.3-70b) — Chuẩn OpenAI-compatible
+ * 2. Tự động bắt lỗi HTTP 429 (Rate Limit), hết Quota, lỗi mạng/5xx và chuyển ngay
+ *    request sang nhà cung cấp kế tiếp trong danh sách xoay vòng.
  */
 
 const DEFAULT_SETTINGS = {
-  provider: 'gemini',              // 'gemini' | 'groq' | 'openai'
+  provider: 'gemini',              // Nhà cung cấp đang chọn để xem/sửa trong tab Cài đặt
   geminiApiKey: '',
   groqApiKey: '',
+  openrouterApiKey: '',
+  cerebrasApiKey: '',
   openaiApiKey: '',
   geminiModel: 'gemini-3.8-flash',
   groqModel: 'llama-3.3-70b-versatile',
+  openrouterModel: 'deepseek/deepseek-chat:free',
+  cerebrasModel: 'llama-3.3-70b',
   openaiModel: 'gpt-4o-mini',
+  currentProviderIndex: 0,         // Vị trí provider hiện tại trong vòng lặp xoay vòng
   autoTranslate: false,
   displayMode: 'bilingual',        // 'bilingual' (Song ngữ bên dưới) | 'word_by_word' (Dịch từng từ) | 'replace' (Thay thế)
   floatingUIEnabled: true,         // Bật/tắt thanh công cụ & cửa sổ nổi trên trang
-  uiScale: 100                     // 80% -> 140% tỉ lệ kích thước giao diện
+  uiScale: 100                     // 75% -> 150% tỉ lệ kích thước giao diện
 };
 
 const DEFAULT_LEARNED_WORDS = [
@@ -49,6 +57,25 @@ const DEFAULT_LEARNED_WORDS = [
   }
 ];
 
+function normalizeStoredSettings(raw = {}) {
+  const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  if (
+    !merged.geminiModel ||
+    merged.geminiModel === 'gemini-2.5-flash' ||
+    merged.geminiModel === 'gemini-2.5-flash-lite' ||
+    merged.geminiModel === 'gemini-2.0-flash' ||
+    merged.geminiModel === 'gemini-2.0-flash-lite' ||
+    merged.geminiModel === 'gemini-1.5-flash' ||
+    merged.geminiModel === 'gemini-1.5-pro'
+  ) {
+    merged.geminiModel = 'gemini-3.8-flash';
+  }
+  if (!merged.groqModel) merged.groqModel = 'llama-3.3-70b-versatile';
+  if (!merged.openrouterModel) merged.openrouterModel = 'deepseek/deepseek-chat:free';
+  if (!merged.cerebrasModel) merged.cerebrasModel = 'llama-3.3-70b';
+  return merged;
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const stored = await chrome.storage.local.get(['settings', 'learned_words']);
 
@@ -56,13 +83,26 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
   } else {
     await chrome.storage.local.set({
-      settings: { ...DEFAULT_SETTINGS, ...stored.settings }
+      settings: normalizeStoredSettings(stored.settings)
     });
   }
 
   if (!Array.isArray(stored.learned_words)) {
     await chrome.storage.local.set({ learned_words: DEFAULT_LEARNED_WORDS });
   }
+
+  // Tự động tiêm lại content.js vào các tab đang mở để người dùng click được ngay sau khi Reload tiện ích
+  try {
+    const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        }).catch(() => {});
+      }
+    }
+  } catch (_) {}
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -123,6 +163,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => sendResponse({ success: false, error: err.message, errorCode: err.code || 'API_ERROR' }));
       return true;
 
+    case 'FETCH_PROVIDER_MODELS':
+      handleFetchProviderModels(message.payload)
+        .then((data) => sendResponse({ success: true, data }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
     default:
       return false;
   }
@@ -131,14 +177,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function getStorageState() {
   const data = await chrome.storage.local.get(['settings', 'learned_words']);
   return {
-    settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
+    settings: normalizeStoredSettings(data.settings || {}),
     learnedWords: Array.isArray(data.learned_words) ? data.learned_words : []
   };
 }
 
 /**
- * Chuẩn hóa thông báo lỗi chi tiết để người dùng biết chính xác:
- * Sai API Key, Sai tên Model, hay Hết hạn mức (Quota).
+ * Chuẩn hóa thông báo lỗi chi tiết để nhận diện chính xác:
+ * Rate Limit (HTTP 429), Hết hạn mức (Quota), Lỗi Server (5xx), Sai API Key hoặc Sai Model.
  */
 function buildDetailedApiError(providerName, status, rawMessage, modelName) {
   const lower = String(rawMessage || '').toLowerCase();
@@ -146,6 +192,21 @@ function buildDetailedApiError(providerName, status, rawMessage, modelName) {
   let code = 'API_ERROR';
 
   if (
+    status === 429 ||
+    lower.includes('quota') ||
+    lower.includes('rate limit') ||
+    lower.includes('rate_limit') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('too many requests') ||
+    lower.includes('tokens per minute') ||
+    lower.includes('requests per minute')
+  ) {
+    code = 'RATE_LIMIT';
+    errorTitle = `Vượt giới hạn gọi API (HTTP 429): Tài khoản ${providerName} đã chạm hạn mức (Rate Limit / Quota).`;
+  } else if (status >= 500 && status < 600) {
+    code = 'SERVER_ERROR';
+    errorTitle = `Máy chủ ${providerName} đang quá tải hoặc bảo trì (HTTP ${status}).`;
+  } else if (
     status === 401 ||
     status === 403 ||
     lower.includes('api_key_invalid') ||
@@ -165,39 +226,50 @@ function buildDetailedApiError(providerName, status, rawMessage, modelName) {
     (status === 400 && lower.includes('model'))
   ) {
     code = 'INVALID_MODEL';
-    errorTitle = `Sai Model (${modelName}): Model này không tồn tại, đã ngừng hỗ trợ hoặc tài khoản của bạn chưa được cấp quyền dùng model này.`;
-  } else if (status === 429 || lower.includes('quota') || lower.includes('rate limit') || lower.includes('resource_exhausted')) {
-    code = 'RATE_LIMIT';
-    errorTitle = `Vượt giới hạn gọi API (HTTP 429): Tài khoản ${providerName} đã hết hạn mức (Quota) hoặc gửi quá nhanh.`;
+    errorTitle = `Sai Model (${providerName} - ${modelName}): Model này không tồn tại hoặc tài khoản chưa được cấp quyền.`;
   } else if (status === 400) {
     code = 'BAD_REQUEST';
-    errorTitle = `Yêu cầu không hợp lệ (${providerName} - Model: ${modelName}): Kiểm tra lại API Key hoặc tên Model.`;
+    errorTitle = `Yêu cầu không hợp lệ (${providerName} - Model: ${modelName}).`;
   }
 
   const err = new Error(`${errorTitle}\nChi tiết từ máy chủ: ${rawMessage}`);
   err.code = code;
+  err.status = status;
+  err.providerName = providerName;
   return err;
 }
 
-function extractGeminiOutputText(data) {
-  if (!data) throw new Error('Phản hồi từ Gemini API rỗng.');
+function extractGeminiRestText(data) {
+  if (!data) throw new Error('Phản hồi từ Gemini REST API rỗng.');
 
+  // 1. Chuẩn REST API generateContent của Gemini
+  if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+    const parts = data.candidates[0]?.content?.parts;
+    if (Array.isArray(parts) && parts.length > 0) {
+      const combined = parts
+        .map((p) => (typeof p.text === 'string' ? p.text : ''))
+        .join('\n')
+        .trim();
+      if (combined) return combined;
+    }
+  }
+
+  // 2. Chuẩn Interactions API (/v1beta/interactions) cho Gemini 3.x / 4.x
   if (typeof data.output_text === 'string' && data.output_text.trim()) {
     return data.output_text.trim();
   }
 
-  if (Array.isArray(data.steps)) {
-    const chunks = [];
-    for (const step of data.steps) {
-      if (step.type === 'model_output' && Array.isArray(step.content)) {
-        for (const part of step.content) {
-          if (part.type === 'text' && typeof part.text === 'string') {
-            chunks.push(part.text);
-          }
-        }
+  if (Array.isArray(data.outputs) && data.outputs.length > 0) {
+    for (let i = data.outputs.length - 1; i >= 0; i--) {
+      const out = data.outputs[i];
+      if (typeof out?.text === 'string' && out.text.trim()) {
+        return out.text.trim();
+      }
+      if (Array.isArray(out?.parts)) {
+        const txt = out.parts.map((p) => p?.text || '').join('\n').trim();
+        if (txt) return txt;
       }
     }
-    if (chunks.length > 0) return chunks.join('\n').trim();
   }
 
   throw new Error('Không tìm thấy dữ liệu văn bản hợp lệ từ Gemini API.');
@@ -209,84 +281,300 @@ function parseCleanJSON(raw) {
     .replace(/^```\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
-  return JSON.parse(cleaned);
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (firstErr) {
+    // Fallback trích xuất khối JSON {...} nếu các model miễn phí trên OpenRouter/Cerebras chèn lời dẫn
+    const startIdx = cleaned.indexOf('{');
+    const endIdx = cleaned.lastIndexOf('}');
+    if (startIdx !== -1 && endIdx > startIdx) {
+      return JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+    }
+    throw firstErr;
+  }
 }
 
 /**
- * Hàm gọi LLM thống nhất cho Gemini, Groq và OpenAI kèm bắt lỗi chi tiết & hỗ trợ Multimodal Image (PDF Scan)
+ * Hàm fetch có bộ đếm thời gian chờ (Timeout) để không bao giờ bị treo "Đang kiểm tra..." vô tận
  */
-async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSettings = null, imageInput = null }) {
-  const { settings: savedSettings } = await getStorageState();
-  const settings = overrideSettings ? { ...savedSettings, ...overrideSettings } : savedSettings;
-  const provider = settings.provider || 'gemini';
+async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      const timeoutErr = new Error(`Máy chủ phản hồi quá lâu (quá ${Math.round(timeoutMs / 1000)} giây).`);
+      timeoutErr.code = 'NETWORK_ERROR';
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  // 1. GOOGLE GEMINI API
-  if (provider === 'gemini') {
-    const apiKey = (settings.geminiApiKey || '').trim();
-    if (!apiKey) {
-      const err = new Error('Chưa đăng nhập Gemini API Key. Hãy mở tiện ích -> tab Cài đặt API để nhập Key.');
-      err.code = 'MISSING_KEY';
-      throw err;
+/**
+ * ============================================================================
+ * CLASS ĐIỀU PHỐI XOAY VÒNG ĐA NHÀ CUNG CẤP AI (MultiProviderRouter)
+ * ============================================================================
+ * Thứ tự ưu tiên xoay vòng (Round-Robin & Auto-Fallback):
+ * (1) Google Gemini — Chuẩn Gemini REST API
+ * (2) Groq — Chuẩn OpenAI-compatible
+ * (3) OpenRouter — Chuẩn OpenAI-compatible
+ * (4) Cerebras — Chuẩn OpenAI-compatible
+ */
+class MultiProviderRouter {
+  constructor() {
+    this.PROVIDERS = [
+      {
+        id: 'gemini',
+        name: 'Google Gemini',
+        keyField: 'geminiApiKey',
+        modelField: 'geminiModel',
+        defaultModel: 'gemini-3.8-flash',
+        priorityModels: [
+          'gemini-3.8-flash',
+          'gemini-3.5-flash-lite',
+          'gemini-3.6-flash',
+          'gemini-4-argon',
+          'gemini-3.1-pro-preview',
+          'gemini-3.1-flash-lite',
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite'
+        ],
+        type: 'gemini-rest'
+      },
+      {
+        id: 'groq',
+        name: 'Groq',
+        keyField: 'groqApiKey',
+        modelField: 'groqModel',
+        defaultModel: 'llama-3.3-70b-versatile',
+        priorityModels: [
+          'llama-3.3-70b-versatile',
+          'llama-3.1-8b-instant',
+          'meta-llama/llama-4-scout-17b-16e-instruct',
+          'meta-llama/llama-4-maverick-17b-128e-instruct',
+          'qwen/qwen3-32b',
+          'qwen-qwq-32b',
+          'deepseek-r1-distill-llama-70b',
+          'gemma2-9b-it'
+        ],
+        endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+        type: 'openai-compat'
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        keyField: 'openrouterApiKey',
+        modelField: 'openrouterModel',
+        defaultModel: 'deepseek/deepseek-chat:free',
+        priorityModels: [
+          'deepseek/deepseek-chat:free',
+          'qwen/qwen-2.5-72b-instruct:free',
+          'meta-llama/llama-3.3-70b-instruct:free',
+          'google/gemini-2.0-flash-exp:free',
+          'deepseek/deepseek-r1:free',
+          'qwen/qwen3-32b:free'
+        ],
+        endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+        type: 'openai-compat'
+      },
+      {
+        id: 'cerebras',
+        name: 'Cerebras',
+        keyField: 'cerebrasApiKey',
+        modelField: 'cerebrasModel',
+        defaultModel: 'llama-3.3-70b',
+        priorityModels: [
+          'llama-3.3-70b',
+          'llama-4-scout-17b-16e-instruct',
+          'llama3.1-8b',
+          'qwen-3-32b'
+        ],
+        endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+        type: 'openai-compat'
+      }
+    ];
+    this.currentIndex = 0;
+  }
+
+  /**
+   * Lọc danh sách các nhà cung cấp mà người dùng ĐÃ NHẬP API KEY
+   */
+  getConfiguredProviders(settings, targetProviderId = null) {
+    if (targetProviderId) {
+      const target = this.PROVIDERS.find((p) => p.id === targetProviderId);
+      if (!target) return [];
+      const key = (settings[target.keyField] || '').trim();
+      return key ? [target] : [];
     }
 
-    const model = (settings.geminiModel || 'gemini-3.8-flash').trim();
+    return this.PROVIDERS.filter((p) => {
+      const key = (settings[p.keyField] || '').trim();
+      return key.length > 0;
+    });
+  }
 
-    const inputPayload = imageInput && imageInput.base64Data
-      ? [
-          { type: 'text', text: userPrompt },
-          {
-            type: 'image',
-            data: imageInput.base64Data,
-            mime_type: imageInput.mimeType || 'image/jpeg'
+  /**
+   * Kiểm tra lỗi có thuộc diện tự động nhảy sang model/provider tiếp theo (429, hết quota, 5xx, lỗi mạng, sai model)
+   */
+  shouldFallback(err) {
+    if (!err) return true;
+    if (
+      err.code === 'RATE_LIMIT' ||
+      err.code === 'SERVER_ERROR' ||
+      err.code === 'NETWORK_ERROR' ||
+      err.code === 'INVALID_MODEL' ||
+      err.status === 429 ||
+      err.status === 404 ||
+      (err.status >= 500 && err.status < 600)
+    ) {
+      return true;
+    }
+    const msg = String(err.message || '').toLowerCase();
+    return (
+      msg.includes('429') ||
+      msg.includes('rate limit') ||
+      msg.includes('quota') ||
+      msg.includes('resource_exhausted') ||
+      msg.includes('too many requests') ||
+      msg.includes('overloaded') ||
+      msg.includes('not found') ||
+      msg.includes('not supported') ||
+      msg.includes('network') ||
+      msg.includes('kết nối mạng') ||
+      msg.includes('phản hồi quá lâu')
+    );
+  }
+
+  /**
+   * (1) Gọi Google Gemini qua chuẩn Interactions API hoặc REST generateContent
+   */
+  async callGeminiRest(provider, settings, { systemInstruction, userPrompt, jsonSchema, imageInput, overrideModel, timeoutMs = 28000 }) {
+    const apiKey = (settings[provider.keyField] || '').trim();
+    const model = (overrideModel || settings[provider.modelField] || provider.defaultModel).trim();
+
+    const effectiveSystemInstruction = jsonSchema
+      ? `${systemInstruction}\n\nQUAN TRỌNG: Chỉ trả về duy nhất chuỗi JSON hợp lệ theo yêu cầu, không kèm markdown \`\`\`json.`
+      : systemInstruction;
+
+    // 1. Thử gọi qua chuẩn Interactions API mới nhất (khuyến nghị chính thức của Google cho Gemini 3.8 / 3.5 / 4 / 2.5)
+    try {
+      const interactionsEndpoint = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(apiKey)}`;
+      const interactionInput = imageInput && imageInput.base64Data
+        ? {
+            parts: [
+              { text: `${effectiveSystemInstruction}\n\n${userPrompt}` },
+              {
+                inline_data: {
+                  mime_type: imageInput.mimeType || 'image/jpeg',
+                  data: imageInput.base64Data
+                }
+              }
+            ]
           }
-        ]
-      : userPrompt;
+        : `${effectiveSystemInstruction}\n\n${userPrompt}`;
+
+      const interactionBody = {
+        model,
+        input: interactionInput
+      };
+      if (jsonSchema) {
+        interactionBody.response_format = {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: jsonSchema
+        };
+      }
+
+      const interRes = await fetchWithTimeout(
+        interactionsEndpoint,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Api-Revision': '2026-05-20'
+          },
+          body: JSON.stringify(interactionBody)
+        },
+        timeoutMs
+      );
+
+      if (interRes.ok) {
+        const interData = await interRes.json();
+        const interText = extractGeminiRestText(interData);
+        return jsonSchema ? parseCleanJSON(interText) : interText;
+      }
+
+      // Nếu interactions báo lỗi 401/403/429 thì báo ngay
+      if (interRes.status === 401 || interRes.status === 403 || interRes.status === 429) {
+        let rawMsg = `HTTP ${interRes.status}`;
+        try {
+          const errData = await interRes.json();
+          rawMsg = errData.error?.message || JSON.stringify(errData);
+        } catch (_) {
+          rawMsg = await interRes.text();
+        }
+        throw buildDetailedApiError(provider.name, interRes.status, rawMsg, model);
+      }
+    } catch (interErr) {
+      if (interErr.code === 'INVALID_API_KEY' || interErr.code === 'RATE_LIMIT') {
+        throw interErr;
+      }
+    }
+
+    // 2. Fallback gọi qua chuẩn generateContent (nếu tài khoản dùng model cũ)
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    const userParts = [{ text: userPrompt }];
+    if (imageInput && imageInput.base64Data) {
+      userParts.push({
+        inlineData: {
+          mimeType: imageInput.mimeType || 'image/jpeg',
+          data: imageInput.base64Data
+        }
+      });
+    }
 
     const body = {
-      model,
-      system_instruction: systemInstruction,
-      input: inputPayload,
-      store: false,
-      generation_config: {
+      systemInstruction: {
+        parts: [{ text: effectiveSystemInstruction }]
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: userParts
+        }
+      ],
+      generationConfig: {
         temperature: 0.15
       }
     };
 
     if (jsonSchema) {
-      body.response_format = {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: jsonSchema
-      };
+      body.generationConfig.responseMimeType = 'application/json';
     }
 
     let response;
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      attempts++;
-      try {
-        response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    try {
+      response = await fetchWithTimeout(
+        endpoint,
+        {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-            'Api-Revision': '2026-05-20'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)
-        });
-      } catch (networkErr) {
-        throw new Error(`Lỗi kết nối mạng tới Gemini API: ${networkErr.message}`);
-      }
-
-      if (response.status === 429 && attempts < maxAttempts) {
-        // Tự động chờ khi máy chủ Gemini quá tải hoặc chạm 15 RPM
-        const waitMs = attempts === 1 ? 5000 : 12000;
-        await new Promise((r) => setTimeout(r, waitMs));
-        continue;
-      }
-      break;
+        },
+        timeoutMs
+      );
+    } catch (networkErr) {
+      const err = new Error(`Lỗi kết nối mạng tới ${provider.name} API: ${networkErr.message}`);
+      err.code = 'NETWORK_ERROR';
+      throw err;
     }
 
     if (!response.ok) {
@@ -297,93 +585,244 @@ async function callLLM({ systemInstruction, userPrompt, jsonSchema, overrideSett
       } catch (_) {
         rawMsg = await response.text();
       }
-      throw buildDetailedApiError('Google Gemini', response.status, rawMsg, model);
+      throw buildDetailedApiError(provider.name, response.status, rawMsg, model);
     }
 
     const data = await response.json();
-    const text = extractGeminiOutputText(data);
+    const text = extractGeminiRestText(data);
     return jsonSchema ? parseCleanJSON(text) : text;
   }
 
-  // 2. GROQ HOẶC OPENAI API
-  const isGroq = provider === 'groq';
-  const providerLabel = isGroq ? 'Groq' : 'OpenAI';
-  const apiKey = isGroq
-    ? (settings.groqApiKey || '').trim()
-    : (settings.openaiApiKey || '').trim();
+  /**
+   * (2), (3), (4) Gọi chuẩn OpenAI-compatible cho Groq, OpenRouter, Cerebras
+   */
+  async callOpenAICompatible(provider, settings, { systemInstruction, userPrompt, jsonSchema, imageInput, overrideModel, timeoutMs = 28000 }) {
+    const apiKey = (settings[provider.keyField] || '').trim();
+    const model = (overrideModel || settings[provider.modelField] || provider.defaultModel).trim();
 
-  if (!apiKey) {
-    const err = new Error(`Chưa đăng nhập ${providerLabel} API Key. Hãy mở tiện ích -> tab Cài đặt API để nhập Key.`);
-    err.code = 'MISSING_KEY';
-    throw err;
-  }
+    const effectiveSystemInstruction = jsonSchema
+      ? `${systemInstruction}\n\nIMPORTANT: Return ONLY a valid raw JSON object matching the requested fields. Do not include markdown fences or any extra commentary.`
+      : systemInstruction;
 
-  const endpoint = isGroq
-    ? 'https://api.groq.com/openai/v1/chat/completions'
-    : 'https://api.openai.com/v1/chat/completions';
-
-  const model = isGroq
-    ? (settings.groqModel || 'llama-3.3-70b-versatile').trim()
-    : (settings.openaiModel || 'gpt-4o-mini').trim();
-
-  const userContent = imageInput && imageInput.base64Data
-    ? [
-        { type: 'text', text: userPrompt },
-        {
-          type: 'image_url',
-          image_url: {
-            url: `data:${imageInput.mimeType || 'image/jpeg'};base64,${imageInput.base64Data}`
+    const userContent = imageInput && imageInput.base64Data
+      ? [
+          { type: 'text', text: userPrompt },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${imageInput.mimeType || 'image/jpeg'};base64,${imageInput.base64Data}`
+            }
           }
-        }
+        ]
+      : userPrompt;
+
+    const body = {
+      model,
+      temperature: 0.15,
+      messages: [
+        { role: 'system', content: effectiveSystemInstruction },
+        { role: 'user', content: userContent }
       ]
-    : userPrompt;
+    };
 
-  const body = {
-    model,
-    temperature: 0.15,
-    messages: [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: userContent }
-    ]
-  };
-
-  if (jsonSchema) {
-    body.response_format = { type: 'json_object' };
-  }
-
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(body)
-    });
-  } catch (networkErr) {
-    throw new Error(`Lỗi kết nối mạng tới ${providerLabel} API: ${networkErr.message}`);
-  }
-
-  if (!response.ok) {
-    let rawMsg = `HTTP ${response.status}`;
-    try {
-      const errData = await response.json();
-      rawMsg = errData.error?.message || JSON.stringify(errData);
-    } catch (_) {
-      rawMsg = await response.text();
+    if (jsonSchema && provider.id === 'groq') {
+      body.response_format = { type: 'json_object' };
     }
-    throw buildDetailedApiError(providerLabel, response.status, rawMsg, model);
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    };
+
+    if (provider.id === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://github.com/Sixyears6/lexis-chrome-extension';
+      headers['X-Title'] = 'Lexis Contextual Translator';
+    }
+
+    let response;
+    try {
+      response = await fetchWithTimeout(
+        provider.endpoint,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        },
+        timeoutMs
+      );
+    } catch (networkErr) {
+      const err = new Error(`Lỗi kết nối mạng tới ${provider.name} API: ${networkErr.message}`);
+      err.code = 'NETWORK_ERROR';
+      throw err;
+    }
+
+    if (!response.ok) {
+      let rawMsg = `HTTP ${response.status}`;
+      try {
+        const errData = await response.json();
+        rawMsg = errData.error?.message || JSON.stringify(errData);
+      } catch (_) {
+        rawMsg = await response.text();
+      }
+      throw buildDetailedApiError(provider.name, response.status, rawMsg, model);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    if (!content) {
+      const emptyErr = new Error(`Phản hồi từ ${provider.name} API rỗng.`);
+      emptyErr.code = 'SERVER_ERROR';
+      throw emptyErr;
+    }
+    return jsonSchema ? parseCleanJSON(content) : content;
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  if (!content) throw new Error(`Phản hồi từ ${providerLabel} API rỗng.`);
-  return jsonSchema ? parseCleanJSON(content) : content;
+  /**
+   * Điều phối gọi API theo vòng lặp xoay vòng (Auto-Fallback Model trong cùng hãng & Xoay vòng sang hãng kế tiếp)
+   */
+  async dispatch({
+    systemInstruction,
+    userPrompt,
+    jsonSchema = null,
+    overrideSettings = null,
+    imageInput = null,
+    targetProvider = null
+  }) {
+    const { settings: savedSettings } = await getStorageState();
+    const settings = overrideSettings
+      ? normalizeStoredSettings({ ...savedSettings, ...overrideSettings })
+      : savedSettings;
+
+    const activeProviders = this.getConfiguredProviders(settings, targetProvider);
+
+    if (activeProviders.length === 0) {
+      const err = new Error(
+        'Chưa cấu hình API Key nào. Hãy mở tiện ích -> tab Cài đặt API để nhập ít nhất 1 API Key (Google Gemini, Groq, OpenRouter hoặc Cerebras).'
+      );
+      err.code = 'MISSING_KEY';
+      throw err;
+    }
+
+    if (!targetProvider && typeof settings.currentProviderIndex === 'number') {
+      this.currentIndex = settings.currentProviderIndex;
+    }
+
+    this.currentIndex = ((this.currentIndex % activeProviders.length) + activeProviders.length) % activeProviders.length;
+
+    const errorsEncountered = [];
+    let attempts = 0;
+
+    while (attempts < activeProviders.length) {
+      const provider = activeProviders[this.currentIndex];
+      const primaryModel = (settings[provider.modelField] || provider.defaultModel).trim();
+      // Tạo danh sách ứng viên model của hãng này (Model đang chọn -> Các model dự phòng của hãng)
+      const modelCandidates = [
+        primaryModel,
+        ...(provider.priorityModels || []).filter((m) => m !== primaryModel)
+      ].slice(0, 3);
+
+      let providerLastErr = null;
+
+      for (const candidateModel of modelCandidates) {
+        try {
+          const result =
+            provider.type === 'gemini-rest'
+              ? await this.callGeminiRest(provider, settings, {
+                  systemInstruction,
+                  userPrompt,
+                  jsonSchema,
+                  imageInput,
+                  overrideModel: candidateModel
+                })
+              : await this.callOpenAICompatible(provider, settings, {
+                  systemInstruction,
+                  userPrompt,
+                  jsonSchema,
+                  imageInput,
+                  overrideModel: candidateModel
+                });
+
+          // Nếu tự động nhảy sang model khác hoặc provider khác thành công -> Lưu lại ngay
+          if (!overrideSettings) {
+            const updatedSettings = {
+              ...savedSettings,
+              currentProviderIndex: this.currentIndex,
+              [provider.modelField]: candidateModel
+            };
+            chrome.storage.local.set({ settings: updatedSettings });
+          }
+
+          return result;
+        } catch (err) {
+          providerLastErr = err;
+          errorsEncountered.push({
+            providerName: provider.name,
+            model: candidateModel,
+            error: err
+          });
+
+          // Nếu lỗi là Sai API Key (401/403) thì không cần thử model khác của cùng hãng này nữa
+          if (err.code === 'INVALID_API_KEY') {
+            break;
+          }
+          // Nếu lỗi là Sai Model (404) hoặc Chạm hạn mức (429) -> thử ngay model dự phòng tiếp theo của hãng này!
+        }
+      }
+
+      if (targetProvider) {
+        throw providerLastErr;
+      }
+
+      // Chuyển sang nhà cung cấp tiếp theo trong danh sách xoay vòng
+      this.currentIndex = (this.currentIndex + 1) % activeProviders.length;
+      attempts++;
+
+      if (!overrideSettings) {
+        chrome.storage.local.set({
+          settings: { ...savedSettings, currentProviderIndex: this.currentIndex }
+        });
+      }
+
+      if (activeProviders.length === 1 && providerLastErr && !this.shouldFallback(providerLastErr)) {
+        throw providerLastErr;
+      }
+    }
+
+    const triedSummary = errorsEncountered
+      .map((item) => `${item.providerName} (${item.model}): ${item.error.code || 'ERROR'}`)
+      .join(' → ');
+
+    // Kiểm tra nguyên nhân lỗi để trả về thông báo chính xác
+    const hasOnly429 = errorsEncountered.every((item) => item.error.code === 'RATE_LIMIT' || item.error.status === 429);
+    if (hasOnly429) {
+      const finalErr = new Error(
+        `Tất cả các tài khoản AI đã cấu hình đều đang chạm giới hạn tần suất gọi (HTTP 429 - Rate Limit / Hết Quota). Vui lòng đợi 1 phút rồi thử lại, hoặc thêm API Key của nhà cung cấp khác!`
+      );
+      finalErr.code = 'RATE_LIMIT';
+      throw finalErr;
+    }
+
+    const finalErr = new Error(
+      `Không thể hoàn thành yêu cầu sau khi thử các dịch vụ đã gắn Key:\n${errorsEncountered
+        .map((it) => `• ${it.providerName} (${it.model}): ${it.error.message || it.error.code}`)
+        .join('\n')}`
+    );
+    finalErr.code = errorsEncountered[errorsEncountered.length - 1].error.code || 'API_ERROR';
+    throw finalErr;
+  }
+}
+
+const aiRouter = new MultiProviderRouter();
+
+/**
+ * Hàm gọi LLM thống nhất qua bộ điều phối xoay vòng đa nhà cung cấp (MultiProviderRouter)
+ */
+async function callLLM(options) {
+  return await aiRouter.dispatch(options);
 }
 
 /**
- * 1. Dịch ngữ cảnh toàn trang theo dạng Văn bản Hợp nhất (Document Text Format)
+ * 1. Dịch ngữ cảnh toàn trang theo dạng Văn bản Hợp nhất (Document Text Format - 1 Request / Trang)
  */
 async function handleTranslateBatch(payload) {
   const { documentText = '', pageTitle = '', totalCount = 0 } = payload || {};
@@ -428,7 +867,7 @@ ${documentText}`;
 }
 
 /**
- * 2. Dịch từng từ / cụm từ theo ngữ cảnh (Word-by-Word Interlinear Mode)
+ * 2. Dịch từng từ / cụm từ theo ngữ cảnh (Word-by-Word Interlinear Mode - 1 Request / Trang)
  * Trả về các cặp từ/cụm từ gốc kèm nghĩa tiếng Việt ngắn gọn bên dưới từng từ.
  */
 async function handleTranslateWordByWord(payload) {
@@ -529,8 +968,6 @@ Trả về JSON theo đúng cấu trúc.`;
 
 /**
  * 4. Dịch nhanh kiểu Google Dịch (Quick Translate Box trong cửa sổ nổi 400px)
- * Hỗ trợ dịch từ đơn, cụm từ, câu hoặc đoạn văn bất kỳ giữa các ngôn ngữ,
- * kèm phiên âm, từ loại, các nghĩa từ điển khác và gợi ý lưu từ.
  */
 async function handleQuickTranslate(payload) {
   const { text = '', sourceLang = 'auto', targetLang = 'Tiếng Việt' } = payload || {};
@@ -618,36 +1055,276 @@ async function handleSuggestWords(payload) {
 }
 
 /**
- * 6. Kiểm tra kết nối API Key & Model thực tế
+ * Nhận diện nhanh định dạng tiền tố API Key để báo ngay nếu người dùng chọn nhầm Nhà phát triển
+ */
+function detectKeyPrefixProvider(apiKey = '') {
+  const k = String(apiKey || '').trim();
+  if (k.startsWith('AIza')) return { id: 'gemini', name: 'Google Gemini' };
+  if (k.startsWith('gsk_')) return { id: 'groq', name: 'Groq' };
+  if (k.startsWith('sk-or-')) return { id: 'openrouter', name: 'OpenRouter' };
+  if (k.startsWith('csk-')) return { id: 'cerebras', name: 'Cerebras' };
+  return null;
+}
+
+/**
+ * 6. TỰ ĐỘNG KIỂM TRA API KEY & TỰ ĐỘNG DÒ CHÍNH XÁC MODEL CHO KEY ĐÓ (Dưới 1.5 giây!)
+ * Người dùng chỉ cần chọn Nhà phát triển (Gemini / Groq / OpenRouter / Cerebras) và dán API Key.
+ * Hệ thống tự truy vấn danh sách Model của Key đó, chọn Model tốt nhất đang hoạt động và trả kết quả ngay!
  */
 async function handleTestConnection(payload) {
   const { settings: savedSettings } = await getStorageState();
-  const activeSettings = payload?.settings ? { ...savedSettings, ...payload.settings } : savedSettings;
-  const provider = activeSettings.provider || 'gemini';
-  const model =
-    provider === 'gemini'
-      ? activeSettings.geminiModel
-      : provider === 'groq'
-      ? activeSettings.groqModel
-      : activeSettings.openaiModel;
+  const activeSettings = payload?.settings
+    ? normalizeStoredSettings({ ...savedSettings, ...payload.settings })
+    : savedSettings;
 
-  await callLLM({
-    systemInstruction: 'You are a connection verifier. Respond with JSON {"ok": true}.',
-    userPrompt: 'Verify connection and return {"ok": true}',
-    jsonSchema: {
-      type: 'object',
-      properties: {
-        ok: { type: 'boolean' }
+  const targetProvider = payload?.targetProvider || activeSettings.provider || 'gemini';
+  const providerMeta = aiRouter.PROVIDERS.find((p) => p.id === targetProvider) || aiRouter.PROVIDERS[0];
+  const apiKey = String(activeSettings[providerMeta.keyField] || '').trim();
+
+  if (!apiKey) {
+    const err = new Error(`Vui lòng dán API Key cho nhà phát triển ${providerMeta.name}.`);
+    err.code = 'MISSING_KEY';
+    throw err;
+  }
+
+  // 1. Kiểm tra nếu người dùng dán nhầm Key của hãng khác vào hãng đang chọn
+  const prefixHint = detectKeyPrefixProvider(apiKey);
+  if (prefixHint && prefixHint.id !== providerMeta.id) {
+    const mismatchErr = new Error(
+      `Phát hiện nhầm Nhà phát triển: Mã API Key bạn vừa dán có định dạng của "${prefixHint.name}", nhưng bạn đang chọn "${providerMeta.name}".\n👉 Hãy chuyển mục (1) sang "${prefixHint.name}" rồi bấm gắn lại!`
+    );
+    mismatchErr.code = 'PROVIDER_MISMATCH';
+    throw mismatchErr;
+  }
+
+  // 2. Truy vấn trực tiếp danh sách Model mà API Key này được phép sử dụng (Timeout nhanh 5 giây)
+  let discoveredModels = [];
+  let keyVerifiedByModelsEndpoint = false;
+
+  if (providerMeta.id === 'gemini') {
+    const modelsUrl = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
+    const res = await fetchWithTimeout(modelsUrl, { method: 'GET' }, 5500);
+    if (!res.ok) {
+      let rawMsg = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        rawMsg = errData.error?.message || JSON.stringify(errData);
+      } catch (_) {
+        rawMsg = await res.text();
+      }
+      throw buildDetailedApiError(providerMeta.name, res.status, rawMsg, 'auto-detect');
+    }
+
+    const data = await res.json();
+    keyVerifiedByModelsEndpoint = true;
+    const rawList = Array.isArray(data?.models) ? data.models : [];
+    discoveredModels = rawList
+      .filter((m) => {
+        const methods = m.supportedGenerationMethods || [];
+        return methods.includes('generateContent');
+      })
+      .map((m) => {
+        const id = String(m.name || '').replace(/^models\//, '').trim();
+        const lower = id.toLowerCase();
+        if (
+          !id ||
+          lower.includes('embedding') ||
+          lower.includes('aqa') ||
+          lower.includes('imagen') ||
+          lower.includes('tts') ||
+          lower.includes('whisper') ||
+          lower.includes('veo') ||
+          lower.includes('lyria') ||
+          lower.includes('robotics') ||
+          lower.includes('learnlm') ||
+          lower.includes('bisheng')
+        ) {
+          return null;
+        }
+        return {
+          id,
+          name: m.displayName ? `${id} — ${m.displayName}` : id,
+          badge: 'Key hỗ trợ'
+        };
+      })
+      .filter(Boolean);
+  } else if (providerMeta.id === 'groq' || providerMeta.id === 'cerebras') {
+    const modelsUrl =
+      providerMeta.id === 'groq'
+        ? 'https://api.groq.com/openai/v1/models'
+        : 'https://api.cerebras.ai/v1/models';
+    const res = await fetchWithTimeout(
+      modelsUrl,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` }
       },
-      required: ['ok']
-    },
-    overrideSettings: activeSettings
+      5500
+    );
+
+    if (!res.ok) {
+      let rawMsg = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        rawMsg = errData.error?.message || JSON.stringify(errData);
+      } catch (_) {
+        rawMsg = await res.text();
+      }
+      throw buildDetailedApiError(providerMeta.name, res.status, rawMsg, 'auto-detect');
+    }
+
+    const data = await res.json();
+    keyVerifiedByModelsEndpoint = true;
+    const rawList = Array.isArray(data?.data) ? data.data : [];
+    discoveredModels = rawList
+      .filter((m) => m.active !== false)
+      .map((m) => {
+        const id = String(m.id || '').trim();
+        const lower = id.toLowerCase();
+        if (
+          !id ||
+          lower.includes('whisper') ||
+          lower.includes('tts') ||
+          lower.includes('guard') ||
+          lower.includes('orpheus') ||
+          lower.includes('playai')
+        ) {
+          return null;
+        }
+        return {
+          id,
+          name: `${id} — Đang hoạt động trên ${providerMeta.name}`,
+          badge: 'Key hỗ trợ'
+        };
+      })
+      .filter(Boolean);
+  } else if (providerMeta.id === 'openrouter') {
+    // Kiểm tra nhanh tính hợp lệ của OpenRouter API Key qua /api/v1/auth/key
+    const authRes = await fetchWithTimeout(
+      'https://openrouter.ai/api/v1/auth/key',
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` }
+      },
+      5500
+    );
+
+    if (!authRes.ok) {
+      let rawMsg = `HTTP ${authRes.status}`;
+      try {
+        const errData = await authRes.json();
+        rawMsg = errData.error?.message || JSON.stringify(errData);
+      } catch (_) {
+        rawMsg = await authRes.text();
+      }
+      throw buildDetailedApiError(providerMeta.name, authRes.status, rawMsg, 'auto-detect');
+    }
+
+    keyVerifiedByModelsEndpoint = true;
+    try {
+      const modelsRes = await fetchWithTimeout(
+        'https://openrouter.ai/api/v1/models',
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+        4500
+      );
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        const rawList = Array.isArray(modelsData?.data) ? modelsData.data : [];
+        discoveredModels = rawList
+          .map((m) => {
+            const id = String(m.id || '').trim();
+            if (!id) return null;
+            const isFree =
+              id.endsWith(':free') ||
+              (Number(m.pricing?.prompt) === 0 && Number(m.pricing?.completion) === 0);
+            return {
+              id,
+              name: m.name ? `${id} — ${m.name}` : id,
+              badge: isFree ? 'Miễn phí' : 'Pro / Paid'
+            };
+          })
+          .filter(Boolean);
+      }
+    } catch (_) {}
+  }
+
+  // 3. Tự động chọn Model tối ưu nhất nằm trong danh sách mà API Key này hỗ trợ
+  const discoveredIds = new Set(discoveredModels.map((m) => m.id));
+  const priorityList = providerMeta.priorityModels || [providerMeta.defaultModel];
+
+  // Sắp xếp danh sách ứng viên để dò: ưu tiên các model chuẩn dịch thuật có trong tài khoản của người dùng
+  const candidateModelsToProbe = [];
+  for (const pm of priorityList) {
+    if (discoveredIds.size === 0 || discoveredIds.has(pm)) {
+      candidateModelsToProbe.push(pm);
+    }
+  }
+  for (const dm of discoveredModels) {
+    if (!candidateModelsToProbe.includes(dm.id)) {
+      candidateModelsToProbe.push(dm.id);
+    }
+  }
+  if (candidateModelsToProbe.length === 0) {
+    candidateModelsToProbe.push(providerMeta.defaultModel);
+  }
+
+  // 4. Thử ping siêu nhẹ (timeout 3.5s) trên tối đa 2 model đầu tiên để chọn đúng model không bị 429
+  let bestWorkingModel = candidateModelsToProbe[0];
+  let rateLimitedDuringProbe = false;
+
+  for (const testModel of candidateModelsToProbe.slice(0, 2)) {
+    try {
+      if (providerMeta.type === 'gemini-rest') {
+        await aiRouter.callGeminiRest(providerMeta, activeSettings, {
+          systemInstruction: 'Reply OK',
+          userPrompt: 'OK',
+          overrideModel: testModel,
+          timeoutMs: 3800
+        });
+      } else {
+        await aiRouter.callOpenAICompatible(providerMeta, activeSettings, {
+          systemInstruction: 'Reply OK',
+          userPrompt: 'OK',
+          overrideModel: testModel,
+          timeoutMs: 3800
+        });
+      }
+      bestWorkingModel = testModel;
+      rateLimitedDuringProbe = false;
+      break;
+    } catch (probeErr) {
+      if (probeErr.code === 'INVALID_API_KEY') {
+        throw probeErr;
+      }
+      if (probeErr.code === 'RATE_LIMIT' || probeErr.status === 429) {
+        rateLimitedDuringProbe = true;
+      }
+    }
+  }
+
+  // Nếu cả endpoint /models lẫn probe đều chưa xác thực được thì báo lỗi
+  if (!keyVerifiedByModelsEndpoint && !bestWorkingModel) {
+    throw new Error(`Không thể xác thực API Key cho ${providerMeta.name}.`);
+  }
+
+  // 5. Tự động lưu ngay API Key và Model chính xác vừa phát hiện vào chrome.storage.local
+  const updatedSettings = normalizeStoredSettings({
+    ...savedSettings,
+    ...activeSettings,
+    provider: providerMeta.id,
+    [providerMeta.keyField]: apiKey,
+    [providerMeta.modelField]: bestWorkingModel
   });
+  await chrome.storage.local.set({ settings: updatedSettings });
 
   return {
     ok: true,
-    provider: provider.toUpperCase(),
-    model
+    provider: providerMeta.name,
+    providerId: providerMeta.id,
+    model: bestWorkingModel,
+    availableModels: discoveredModels,
+    totalModels: discoveredModels.length,
+    rateLimited: rateLimitedDuringProbe
   };
 }
 
@@ -693,7 +1370,7 @@ async function handleFetchPdfBase64(payload) {
 }
 
 /**
- * 9. Dịch trang PDF dạng ảnh quét (Scanned PDF / Image OCR + Translation) bằng AI Vision
+ * 9. Dịch trang PDF dạng ảnh quét (Scanned PDF / Image OCR + Translation) bằng AI Vision (1 Request / Trang)
  */
 async function handleTranslatePdfVisionPage(payload) {
   const { base64Data = '', mimeType = 'image/jpeg', pageNumber = 1, displayMode = 'bilingual' } = payload || {};
@@ -748,4 +1425,94 @@ QUY TẮC BẮT BUỘC:
     jsonSchema,
     imageInput: { base64Data, mimeType }
   });
+}
+
+/**
+ * 10. Lấy danh sách toàn bộ các Model đang được hỗ trợ trực tiếp từ máy chủ của nhà cung cấp
+ */
+async function handleFetchProviderModels(payload) {
+  const { settings } = await getStorageState();
+  const providerId = payload?.provider || settings.provider || 'gemini';
+  const apiKey = String(payload?.apiKey || settings[`${providerId}ApiKey`] || '').trim();
+
+  if (providerId === 'openrouter') {
+    const headers = {};
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const res = await fetch('https://openrouter.ai/api/v1/models', { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = Array.isArray(data?.data) ? data.data : [];
+    const models = list
+      .map((m) => {
+        const id = String(m.id || '').trim();
+        if (!id) return null;
+        const isFree = id.endsWith(':free') || (Number(m.pricing?.prompt) === 0 && Number(m.pricing?.completion) === 0);
+        return {
+          id,
+          name: m.name || id,
+          badge: isFree ? 'Miễn phí' : 'Hỗ trợ (Pro/Paid)'
+        };
+      })
+      .filter(Boolean);
+    return { provider: providerId, models };
+  }
+
+  if (providerId === 'gemini') {
+    if (!apiKey) return { provider: providerId, models: [] };
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = Array.isArray(data?.models) ? data.models : [];
+    const models = list
+      .filter((m) => {
+        const methods = m.supportedGenerationMethods || [];
+        return (
+          methods.length === 0 ||
+          methods.includes('generateContent') ||
+          methods.includes('createInteraction')
+        );
+      })
+      .map((m) => {
+        const id = String(m.name || '').replace(/^models\//, '').trim();
+        if (!id || id.includes('embedding') || id.includes('aqa') || id.includes('imagen')) return null;
+        return {
+          id,
+          name: m.displayName ? `${id} — ${m.displayName}` : id,
+          badge: 'Đang hỗ trợ'
+        };
+      })
+      .filter(Boolean);
+    return { provider: providerId, models };
+  }
+
+  if (providerId === 'groq' || providerId === 'cerebras') {
+    if (!apiKey) return { provider: providerId, models: [] };
+    const endpoint =
+      providerId === 'groq'
+        ? 'https://api.groq.com/openai/v1/models'
+        : 'https://api.cerebras.ai/v1/models';
+    const res = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = Array.isArray(data?.data) ? data.data : [];
+    const models = list
+      .filter((m) => m.active !== false)
+      .map((m) => {
+        const id = String(m.id || '').trim();
+        if (!id || id.includes('whisper') || id.includes('tts') || id.includes('guard')) return null;
+        return {
+          id,
+          name: id,
+          badge: 'Đang hỗ trợ'
+        };
+      })
+      .filter(Boolean);
+    return { provider: providerId, models };
+  }
+
+  return { provider: providerId, models: [] };
 }

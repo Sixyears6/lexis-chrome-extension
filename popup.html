@@ -547,6 +547,97 @@
       border: 1px solid var(--border);
       white-space: nowrap;
     }
+
+    /* Khung danh sách Model có Thanh trượt kéo lên/xuống (Không hiện cục) */
+    .model-scroll-box {
+      max-height: 168px;
+      overflow-y: scroll;
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      margin-bottom: 7px;
+    }
+
+    .model-scroll-box::-webkit-scrollbar {
+      width: 9px;
+    }
+
+    .model-scroll-box::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 0 7px 7px 0;
+    }
+
+    .model-scroll-box::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 6px;
+      border: 2px solid #f1f5f9;
+    }
+
+    .model-scroll-box::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .model-scroll-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background-color 120ms ease-out;
+      user-select: none;
+    }
+
+    .model-scroll-row:last-child {
+      border-bottom: none;
+    }
+
+    .model-scroll-row:hover {
+      background: #f4f4f5;
+    }
+
+    .model-scroll-row.is-active {
+      background: #f0fdf4;
+      border-left: 3px solid #16a34a;
+      padding-left: 7px;
+    }
+
+    .model-row-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .model-row-id {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .model-row-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .model-row-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--text-secondary);
+    }
+
+    .model-scroll-row.is-active .model-row-badge {
+      background: #dcfce7;
+      color: #15803d;
+      border-color: #86efac;
+    }
   </style>
 </head>
 <body>
@@ -602,6 +693,9 @@
     <button class="tab-item" data-target="pane-settings">Cài đặt API</button>
   </nav>
 
+  <!-- HỘP HIỂN THỊ TRẠNG THÁI / THÔNG BÁO LỖI CHUNG CHO MỌI TAB -->
+  <div class="alert-box" id="api-alert-box" style="margin:10px 16px 0;"></div>
+
   <!-- PANE 1: VOCABULARY (THIẾT Kế LẠI THOÁNG ĐÃNG, RÕ RÀNG) -->
   <main class="view-pane active" id="pane-vocab">
     <!-- Khung thêm từ vựng mới bố cục 2 hàng dễ nhìn -->
@@ -638,75 +732,124 @@
     </div>
   </main>
 
-  <!-- PANE 2: SETTINGS (XÁC THỰC API & MODEL THỰC TẾ, BÁO LỖI CHI TIẾT) -->
+  <!-- PANE 2: SETTINGS (ĐA NHÀ CUNG CẤP AI FREE XOAY VÒNG & TỰ ĐỘNG NHẢY KHI 429) -->
   <section class="view-pane" id="pane-settings">
-    <!-- TRẠNG THÁI 1: CHƯA ĐĂNG NHẬP API -->
-    <div id="api-login-view">
-      <div class="field">
-        <label class="field-label">1. Chọn Nhà cung cấp AI</label>
-        <select class="select" id="provider-select">
-          <option value="gemini">Google Gemini API (Free Tier)</option>
-          <option value="groq">Groq API (Llama 3.3 - Siêu nhanh)</option>
-          <option value="openai">OpenAI API (ChatGPT)</option>
-        </select>
+    <!-- BẢNG TRẠNG THÁI VÒNG LẶP ĐA NHÀ CUNG CẤP (ROUND-ROBIN POOL) -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:11.5px;font-weight:700;color:var(--text);">Vòng lặp AI Free (Tự động nhảy khi lỗi 429)</span>
+        <span id="pool-active-count" style="font-size:11px;font-weight:600;color:var(--success);background:var(--success-bg);border:1px solid var(--success-border);padding:1px 7px;border-radius:999px;">0/4 dịch vụ</span>
       </div>
-
-      <div class="field">
-        <label class="field-label">2. Chọn hoặc nhập tên Model</label>
-        <input
-          type="text"
-          class="input"
-          id="model-input"
-          list="model-suggestions"
-          placeholder="Nhập hoặc chọn tên model..."
-          value="gemini-3.8-flash"
-        />
-        <datalist id="model-suggestions">
-          <option value="gemini-3.8-flash">Gemini 3.8 Flash (Cân bằng &amp; Nhanh)</option>
-          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Siêu nhẹ)</option>
-          <option value="gemini-4-argon">Gemini 4 Argon (Phân tích chuyên sâu)</option>
-        </datalist>
+      <div id="provider-pool-pills" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:5px;">
+        <button type="button" class="btn pool-pill" data-provider="gemini" style="height:26px;padding:0 4px;font-size:11px;">1. Gemini</button>
+        <button type="button" class="btn pool-pill" data-provider="groq" style="height:26px;padding:0 4px;font-size:11px;">2. Groq</button>
+        <button type="button" class="btn pool-pill" data-provider="openrouter" style="height:26px;padding:0 4px;font-size:11px;">3. OpenRouter</button>
+        <button type="button" class="btn pool-pill" data-provider="cerebras" style="height:26px;padding:0 4px;font-size:11px;">4. Cerebras</button>
       </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+        Nhập Key cho nhiều dịch vụ để tự động xoay vòng khi chạm giới hạn Rate Limit.
+      </div>
+    </div>
 
-      <div class="field">
-        <label class="field-label">3. Nhập API Key (Chỉ nhập 1 lần — Tự động ẩn sau khi lưu)</label>
+    <div class="field">
+      <label class="field-label">1. Chọn Nhà phát triển API (Gemini / Groq / OpenRouter / Cerebras)</label>
+      <select class="select" id="provider-select">
+        <option value="gemini">(1) Google Gemini — Nhà phát triển Google AI Studio</option>
+        <option value="groq">(2) Groq (Groq Cloud) — Siêu tốc độ</option>
+        <option value="openrouter">(3) OpenRouter — Đa Model</option>
+        <option value="cerebras">(4) Cerebras AI — Tốc độ 2000 token/s</option>
+      </select>
+    </div>
+
+    <!-- MỤC 2: GẮN API KEY -> TỰ ĐỘNG DÒ & CHỌN MODEL CHÍNH XÁC CỦA KEY ĐÓ -->
+    <div id="api-login-view" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+      <div class="field" style="margin-bottom:8px;">
+        <label class="field-label">2. Gắn API Key (Tự động kiểm tra &amp; nhận diện Model chính xác)</label>
         <input
           type="password"
           class="input"
           id="api-key-input"
-          placeholder="Dán API Key của bạn vào đây..."
+          placeholder="Dán API Key vào đây (Không cần biết trước tên Model)..."
           autocomplete="off"
           spellcheck="false"
         />
       </div>
 
-      <button class="btn btn-dark" id="btn-login-api" style="width:100%;height:34px;">
-        Xác thực &amp; Đăng nhập API
-      </button>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-dark" id="btn-login-api" style="flex:1.4;height:34px;font-weight:700;">
+          🔍 Gắn API &amp; Tự dò Model
+        </button>
+        <button type="button" class="btn" id="btn-save-key-direct" style="flex:0.8;height:34px;" title="Lưu nhanh không cần chờ kiểm tra">
+          💾 Lưu nhanh
+        </button>
+      </div>
     </div>
 
-    <!-- TRẠNG THÁI 2: ĐÃ ĐĂNG NHẬP API (KHÓA & ẨN KEY, MUỐN ĐỔI PHẢI LOGOUT) -->
+    <!-- TRẠNG THÁI ĐÃ GẮN KEY: HIỂN THỊ RÕ NHÀ PHÁT TRIỂN & MODEL CHÍNH XÁC ĐÃ TỰ NHẬN DIỆN -->
     <div id="api-connected-view" style="display:none;">
-      <div class="session-card">
+      <div class="session-card" style="margin-bottom:10px;">
         <div class="session-header">
           <span class="session-badge">
             <span class="status-dot"></span>
-            <span>API đang hoạt động</span>
+            <span>Đã gắn API &amp; Nhận diện Model</span>
           </span>
           <span class="session-provider-tag" id="connected-provider-label">GEMINI</span>
         </div>
-        <p class="session-desc">
-          API Key đã được xác thực và ẩn bảo mật hoàn toàn. Để đổi sang API Key hoặc Model khác, vui lòng bấm Đăng xuất.
-        </p>
+        <div style="background:#ffffff;border:1px solid var(--success-border);border-radius:6px;padding:8px 10px;margin:8px 0;">
+          <div style="font-size:11px;color:var(--text-secondary);">Model chính xác đang hoạt động cho Key này:</div>
+          <div id="detected-model-highlight" style="font-size:13px;font-weight:700;color:var(--success);margin-top:2px;word-break:break-all;">gemini-2.5-flash</div>
+        </div>
         <div class="session-actions">
-          <button class="btn" id="btn-test-key" style="flex:1;">Kiểm tra lại kết nối</button>
-          <button class="btn btn-danger" id="btn-logout-api" style="flex:1;">Đăng xuất / Xóa API</button>
+          <button type="button" class="btn btn-dark" id="btn-test-key" style="flex:1;">🔍 Tự dò lại Model</button>
+          <button type="button" class="btn btn-danger" id="btn-logout-api" style="flex:1;">Xóa / Đổi Key</button>
         </div>
       </div>
     </div>
 
-    <!-- HỘP HIỂN THỊ KẾT QUẢ KIỂM TRA / LỖI SAI API KEY HOẶC SAI MODEL -->
-    <div class="alert-box" id="api-alert-box"></div>
+    <!-- HỘP THÔNG BÁO KẾT QUẢ NGAY TẠI CHỖ (HIỆN NGAY DƯỚI NÚT BẤM, KHÔNG BAO GIỜ BỊ KHUẤT) -->
+    <div class="alert-box" id="api-inline-alert-box" style="margin-top:0;margin-bottom:10px;"></div>
+
+    <!-- MỤC 3: DANH SÁCH MODEL KHẢ DỤNG (THANH TRƯỢT KÉO DỌC — TỰ CẬP NHẬT THEO KEY VỪA GẮN) -->
+    <div class="field" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px;">
+        <label class="field-label" style="margin-bottom:0;">
+          3. Danh sách Model của <span id="current-provider-title" style="color:var(--primary);text-decoration:underline;">Google Gemini</span>
+          <span id="model-count-badge" style="font-size:10.5px;color:var(--text-muted);font-weight:600;margin-left:4px;">(Tự động chọn)</span>
+        </label>
+        <button type="button" class="btn" id="btn-refresh-models" style="height:22px;padding:0 7px;font-size:10.5px;" title="Quét lại danh sách toàn bộ Model từ máy chủ">
+          ↻ Quét Model
+        </button>
+      </div>
+
+      <!-- Ô lọc nhanh trong danh sách thanh trượt -->
+      <input
+        type="text"
+        class="input"
+        id="model-filter-input"
+        placeholder="🔍 Lọc nhanh hoặc kéo thanh trượt bên dưới (Nếu muốn đổi thủ công)..."
+        autocomplete="off"
+        style="height:28px;font-size:11.5px;margin-bottom:6px;background:#ffffff;"
+      />
+
+      <!-- DANH SÁCH CUỘN CÓ THANH TRƯỢT DỌC (SCROLLBAR KÉO LÊN/XUỐNG) -->
+      <div class="model-scroll-box" id="model-scroll-box"></div>
+
+      <!-- Menu thả xuống đồng bộ (ẩn) -->
+      <select class="select" id="model-preset-select" style="display:none;"></select>
+
+      <!-- Ô tên Model đang được chọn -->
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:11px;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Model đang dùng:</span>
+        <input
+          type="text"
+          class="input"
+          id="model-input"
+          placeholder="Tự động điền sau khi gắn API Key..."
+          value="gemini-3.8-flash"
+          style="height:28px;font-size:12px;font-weight:700;background:#ffffff;flex:1;"
+        />
+      </div>
+    </div>
 
     <div class="switch-row">
       <span>Hiển thị thanh nổi &amp; cửa sổ Lexis trên trang</span>
